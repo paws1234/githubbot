@@ -11,9 +11,11 @@ const {
 } = require("discord.js");
 
 const github = require("./github");
+const gitlab = require("./gitlab");
 const workflows = require("./workflows");
 const setupRouter = require("./setupRouter");
 const oauthRouter = require("./oauthRouter");
+const gitlabOAuthRouter = require("./gitlabOAuthRouter");
 const db = require("./db");
 const notifications = require("./notifications");
 
@@ -580,7 +582,34 @@ async function createDiscordBot(setupConfig) {
 
   new SlashCommandBuilder()
     .setName("stale-prs")
-    .setDescription("Find stale PRs stuck for 1+ days and create improvement tasks")
+    .setDescription("Find stale PRs stuck for 1+ days and create improvement tasks"),
+
+  new SlashCommandBuilder()
+    .setName("switch-repo")
+    .setDescription("Switch to a different GitHub/GitLab repository")
+    .addStringOption(o =>
+      o.setName("platform")
+        .setDescription("GitHub or GitLab")
+        .setRequired(true)
+        .addChoices(
+          { name: "GitHub", value: "github" },
+          { name: "GitLab", value: "gitlab" }
+        )
+    )
+    .addStringOption(o =>
+      o.setName("repository")
+        .setDescription("Repository name (owner/repo for GitHub or project path for GitLab)")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("branch")
+        .setDescription("Default branch (optional, defaults to main)")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("current-repo")
+    .setDescription("Show current repository and platform configuration")
 
 ].map(c => c.toJSON());
 
@@ -599,6 +628,29 @@ async function registerCommands() {
   } catch (err) {
     console.error("Failed to register slash commands:", err);
   }
+}
+
+// Helper function to get repository confirmation details
+function getRepoConfirmation(setup) {
+  const platform = setup.currentPlatform || "github";
+  const repo = setup.currentRepo || (platform === "github" ? `${setup.githubOwner}/${setup.githubRepo}` : "Not set");
+  const branch = setup.currentBranch || "main";
+  
+  return {
+    platform,
+    repo,
+    branch,
+    embed: {
+      color: platform === "github" ? 0x24292e : 0xfc6d26,
+      title: `📋 Action on ${platform === "github" ? "🐙 GitHub" : "🦊 GitLab"}`,
+      fields: [
+        { name: "Repository", value: `\`${repo}\``, inline: true },
+        { name: "Branch", value: `\`${branch}\``, inline: true },
+        { name: "Platform", value: platform === "github" ? "GitHub" : "GitLab", inline: true }
+      ],
+      footer: { text: "Use /switch-repo to change the active repository" }
+    }
+  };
 }
 
 client.on("ready", () => {
@@ -624,8 +676,27 @@ client.on("ready", () => {
 
         await interaction.deferReply({ ephemeral: false });
         try {
+          // Get repo confirmation details
+          const repoInfo = getRepoConfirmation(client.setupConfig);
+          
+          // Show what we're about to do
+          const confirmEmbed = {
+            ...repoInfo.embed,
+            title: `✏️ Creating Pull Request on ${repoInfo.platform === "github" ? "🐙 GitHub" : "🦊 GitLab"}`,
+            fields: [
+              ...repoInfo.embed.fields,
+              { name: "Title", value: `\`${title}\``, inline: false },
+              { name: "Source Branch", value: `\`${branch}\``, inline: false }
+            ]
+          };
+
           const pr = await github.createPR(githubToken, githubOwner, githubRepo, branch, title, body);
-          await interaction.editReply(`✅ PR created: #${pr.number} - ${pr.html_url}`);
+          confirmEmbed.color = 0x28a745;
+          confirmEmbed.title = `✅ PR Created`;
+          confirmEmbed.fields.push({ name: "PR Number", value: `#${pr.number}`, inline: true });
+          confirmEmbed.fields.push({ name: "URL", value: `[View PR](${pr.html_url})`, inline: true });
+          
+          await interaction.editReply({ embeds: [confirmEmbed] });
           
           // Send notification to channel
           const embed = notifications.createPRNotification(pr.number, title, branch, interaction.user.username, pr.html_url);
@@ -639,11 +710,24 @@ client.on("ready", () => {
         const number = interaction.options.getInteger("number", true);
         await interaction.deferReply({ ephemeral: false });
         try {
+          const repoInfo = getRepoConfirmation(client.setupConfig);
           const pr = await github.getPRInfo(githubToken, githubOwner, githubRepo, number);
-          await github.approvePR(githubToken, githubOwner, githubRepo, number);
-          await interaction.editReply(`👍 Approved PR #${number}`);
           
-          // Send notification to channel
+          const confirmEmbed = {
+            ...repoInfo.embed,
+            title: `👍 Approving PR #${number}`,
+            fields: [
+              ...repoInfo.embed.fields,
+              { name: "PR Title", value: pr.title, inline: false }
+            ]
+          };
+          
+          await github.approvePR(githubToken, githubOwner, githubRepo, number);
+          confirmEmbed.color = 0x28a745;
+          confirmEmbed.title = `✅ Approved PR #${number}`;
+          
+          await interaction.editReply({ embeds: [confirmEmbed] });
+          
           const embed = notifications.approvePRNotification(number, pr.title, interaction.user.username, pr.html_url);
           await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
@@ -668,16 +752,32 @@ client.on("ready", () => {
         const method = interaction.options.getString("method") || "merge";
         await interaction.deferReply({ ephemeral: false });
         try {
+          const repoInfo = getRepoConfirmation(client.setupConfig);
           const pr = await github.getPRInfo(githubToken, githubOwner, githubRepo, number);
+          
+          const confirmEmbed = {
+            ...repoInfo.embed,
+            title: `🔀 Merging PR #${number}`,
+            fields: [
+              ...repoInfo.embed.fields,
+              { name: "PR Title", value: pr.title, inline: false },
+              { name: "Merge Method", value: method, inline: true }
+            ]
+          };
+          
           const res = await github.mergePR(githubToken, githubOwner, githubRepo, number, method);
           if (res.merged) {
-            await interaction.editReply(`✅ PR #${number} merged via \`${method}\``);
+            confirmEmbed.color = 0x28a745;
+            confirmEmbed.title = `✅ PR #${number} Merged`;
+            await interaction.editReply({ embeds: [confirmEmbed] });
             
-            // Send notification to channel
             const embed = notifications.mergePRNotification(number, pr.title, method, interaction.user.username, pr.html_url);
             await notifications.sendNotification(client, discordChannelId, embed);
           } else {
-            await interaction.editReply(`⚠️ Failed to merge PR #${number}: ${res.message || "unknown error"}`);
+            confirmEmbed.color = 0xffc107;
+            confirmEmbed.title = `⚠️ Could not merge PR #${number}`;
+            confirmEmbed.fields.push({ name: "Reason", value: res.message || "unknown error", inline: false });
+            await interaction.editReply({ embeds: [confirmEmbed] });
           }
         } catch (err) {
           await interaction.editReply(`❌ Failed to merge PR: ${err.message}`);
@@ -751,11 +851,25 @@ client.on("ready", () => {
         const body = interaction.options.getString("body") || "";
         try {
           await interaction.deferReply();
+          const repoInfo = getRepoConfirmation(client.setupConfig);
+          
+          const confirmEmbed = {
+            ...repoInfo.embed,
+            title: `📝 Creating Issue`,
+            fields: [
+              ...repoInfo.embed.fields,
+              { name: "Title", value: `\`${title}\``, inline: false }
+            ]
+          };
+          
           const issue = await github.createIssue(githubToken, githubOwner, githubRepo, title, body);
           const issueUrl = `https://github.com/${githubOwner}/${githubRepo}/issues/${issue.number}`;
-          await interaction.editReply(`🐛 Issue #${issue.number} created: ${title}\n${issueUrl}`);
+          confirmEmbed.color = 0x28a745;
+          confirmEmbed.title = `✅ Issue Created`;
+          confirmEmbed.fields.push({ name: "Issue Number", value: `#${issue.number}`, inline: true });
           
-          // Send notification to channel
+          await interaction.editReply({ embeds: [confirmEmbed] });
+          
           const embed = notifications.createIssueNotification(issue.number, title, interaction.user.username, issueUrl);
           await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
@@ -1754,6 +1868,87 @@ Use: \`/merge-pr number:# method:squash\`
         }
       }
 
+      // Switch Repository Command
+      if (interaction.commandName === "switch-repo") {
+        const platform = interaction.options.getString("platform", true);
+        const repository = interaction.options.getString("repository", true);
+        const branch = interaction.options.getString("branch") || "main";
+
+        try {
+          // Validate that the platform is connected
+          if (platform === "github" && !githubToken) {
+            return await interaction.reply({ 
+              content: "❌ GitHub is not connected to this setup. Please add GitHub first.", 
+              ephemeral: true 
+            });
+          }
+
+          if (platform === "gitlab" && !client.setupConfig.gitlabToken) {
+            return await interaction.reply({ 
+              content: "❌ GitLab is not connected to this setup. Please add GitLab first.", 
+              ephemeral: true 
+            });
+          }
+
+          // Update the database with new repository info
+          await db.updateCurrentRepo(client.setupConfig.id, platform, repository, branch);
+
+          // Update client config
+          client.setupConfig.currentPlatform = platform;
+          client.setupConfig.currentRepo = repository;
+          client.setupConfig.currentBranch = branch;
+
+          const embed = {
+            color: platform === "github" ? 0x24292e : 0xfc6d26,
+            title: `✅ Repository Switched`,
+            description: `All future commands will use this repository by default.`,
+            fields: [
+              { name: "Platform", value: platform === "github" ? "🐙 GitHub" : "🦊 GitLab", inline: true },
+              { name: "Repository", value: repository, inline: true },
+              { name: "Default Branch", value: branch, inline: true }
+            ],
+            footer: { text: "You can override this by specifying different values in individual commands" }
+          };
+
+          await interaction.reply({ embeds: [embed], ephemeral: false });
+        } catch (err) {
+          await interaction.reply({ 
+            content: `❌ Failed to switch repository: ${err.message}`, 
+            ephemeral: true 
+          });
+        }
+      }
+
+      // Current Repository Command
+      if (interaction.commandName === "current-repo") {
+        try {
+          const setup = client.setupConfig;
+          const platform = setup.currentPlatform || "github";
+          const repo = setup.currentRepo || (platform === "github" ? `${setup.githubOwner}/${setup.githubRepo}` : "Not set");
+          const branch = setup.currentBranch || "main";
+
+          const embed = {
+            color: platform === "github" ? 0x24292e : 0xfc6d26,
+            title: `📦 Current Repository Configuration`,
+            fields: [
+              { name: "Platform", value: platform === "github" ? "🐙 GitHub" : "🦊 GitLab", inline: true },
+              { name: "Repository", value: repo, inline: true },
+              { name: "Default Branch", value: branch, inline: true },
+              { name: "Discord Guild", value: `<#${setup.discordGuildId}>`, inline: true },
+              { name: "Discord Channel", value: `<#${setup.discordChannelId}>`, inline: true }
+            ],
+            footer: { text: "Use /switch-repo to change the active repository" }
+          };
+
+          await interaction.reply({ embeds: [embed], ephemeral: true });
+        } catch (err) {
+          await interaction.reply({ 
+            content: `❌ Failed to get repository info: ${err.message}`, 
+            ephemeral: true 
+          });
+        }
+      }
+
     } catch (err) {
       console.error("Error handling command:", err);
       const errorMessage = err.message || "An unexpected error occurred.";
@@ -1846,6 +2041,7 @@ app.get("/setup", (req, res) => {
 
 // OAuth routes
 app.use("/oauth", oauthRouter);
+app.use("/api/oauth", gitlabOAuthRouter(app, db, process.env.APP_BASE_URL));
 
 // Setup API endpoints
 app.use("/api", setupRouter);

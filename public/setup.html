@@ -295,18 +295,44 @@
       <p>Connect your GitHub and Discord accounts</p>
     </div>
 
-    <!-- Step 1: Start -->
+    <!-- Step 1: Choose Git Platform -->
     <div class="step active" id="step-1">
       <div class="step-title">
         <span class="step-number">1</span>
-        Start Setup
+        Choose Git Platform
       </div>
       <p style="color: #666; margin-bottom: 20px;">
-        This Bot will connect your GitHub and Discord accounts securely. Your tokens are encrypted and stored safely.
+        Select which Git platform you'd like to use with the Discord bot. You can add both GitHub and GitLab later.
       </p>
+      <div class="button-group" style="flex-direction: column; gap: 12px;">
+        <button class="oauth-button" style="background: #24292e; color: white;" onclick="selectPlatform('github')">
+          🐙 GitHub
+        </button>
+        <button class="oauth-button" style="background: #fc6d26; color: white;" onclick="selectPlatform('gitlab')">
+          🦊 GitLab
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 1.5: GitHub/GitLab URL Input -->
+    <div class="step" id="step-git-setup">
+      <div class="step-title">
+        <span class="step-number">1</span>
+        <span id="platform-title">Platform Setup</span>
+      </div>
+      <p style="color: #666; margin-bottom: 20px;" id="platform-description"></p>
+      
+      <div class="select-group" id="gitlab-url-group" style="display: none;">
+        <label class="select-label">GitLab Instance URL (for self-hosted)</label>
+        <input type="url" id="gitlab-url" placeholder="https://gitlab.com or https://your-gitlab.com" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;" value="https://gitlab.com">
+      </div>
+
       <div class="button-group">
-        <button class="btn btn-primary" onclick="startOAuth('github')">
-          🔐 Connect GitHub
+        <button class="btn btn-primary" onclick="startOAuth()">
+          🔐 Connect <span id="platform-name"></span>
+        </button>
+        <button class="btn btn-secondary" onclick="goBackToPlatformSelect()">
+          ← Back
         </button>
       </div>
     </div>
@@ -341,10 +367,15 @@
       <div class="user-info" id="user-info"></div>
 
       <div class="select-group">
-        <label class="select-label">Select GitHub Repository</label>
+        <label class="select-label"><span id="repo-label">GitHub Repository</span></label>
         <select id="repo-select">
           <option value="">Loading repositories...</option>
         </select>
+      </div>
+
+      <div class="select-group">
+        <label class="select-label">Default Branch (optional)</label>
+        <input type="text" id="branch-input" placeholder="main" style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px;">
       </div>
 
       <div class="select-group">
@@ -395,6 +426,7 @@
   <script>
     let currentSession = null;
     let sessionData = null;
+    let selectedPlatform = null; // 'github' or 'gitlab'
 
     // Get session from URL on page load
     window.addEventListener('DOMContentLoaded', () => {
@@ -408,13 +440,43 @@
       }
     });
 
-    function startOAuth(provider) {
-      if (provider === 'github') {
+    function selectPlatform(platform) {
+      selectedPlatform = platform;
+      document.getElementById('platform-title').textContent = platform === 'github' ? '🐙 GitHub Setup' : '🦊 GitLab Setup';
+      document.getElementById('platform-name').textContent = platform === 'github' ? 'GitHub' : 'GitLab';
+      document.getElementById('platform-description').textContent = 
+        platform === 'github' 
+          ? 'Connect your GitHub account. Your token will be encrypted and secured.'
+          : 'Connect your GitLab account. Your token will be encrypted and secured.';
+      
+      const gitlabGroup = document.getElementById('gitlab-url-group');
+      if (platform === 'gitlab') {
+        gitlabGroup.style.display = 'block';
+      } else {
+        gitlabGroup.style.display = 'none';
+      }
+      
+      showStep('step-git-setup');
+    }
+
+    function goBackToPlatformSelect() {
+      selectedPlatform = null;
+      showStep('step-1');
+    }
+
+    function startOAuth() {
+      if (!selectedPlatform) {
+        alert('Please select a platform first');
+        return;
+      }
+
+      if (selectedPlatform === 'github') {
         showStep('step-loading-github');
         window.location.href = '/oauth/github';
-      } else if (provider === 'discord') {
+      } else if (selectedPlatform === 'gitlab') {
+        const gitlabUrl = document.getElementById('gitlab-url').value || 'https://gitlab.com';
         showStep('step-loading-github');
-        window.location.href = `/oauth/discord?session=${currentSession}`;
+        window.location.href = `/api/oauth/login/gitlab?setup_id=temp&gitlab_url=${encodeURIComponent(gitlabUrl)}`;
       }
     }
 
@@ -503,6 +565,7 @@
       const repoName = document.getElementById('repo-select').value;
       const guildId = document.getElementById('guild-select').value;
       const channelId = document.getElementById('channel-select').value;
+      const branch = document.getElementById('branch-input').value || 'main';
 
       if (!repoName || !guildId) {
         alert('Please select a repository and guild');
@@ -519,7 +582,8 @@
             sessionId: currentSession,
             repoName,
             guildId,
-            channelId: channelId || guildId // Use guild ID if channel not selected
+            channelId: channelId || guildId, // Use guild ID if channel not selected
+            branch
           })
         });
 

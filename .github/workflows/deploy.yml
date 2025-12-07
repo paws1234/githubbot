@@ -1,0 +1,99 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy.yml'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Generate image metadata
+        id: meta
+        run: |
+          echo "timestamp=$(date -u +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
+          echo "commit_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+          echo "version=$(grep -oP '"version":\s*"\K[^"]*' package.json)" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        run: |
+          docker build -t github-discord-bot:${{ steps.meta.outputs.commit_short }} .
+          docker tag github-discord-bot:${{ steps.meta.outputs.commit_short }} github-discord-bot:latest
+          echo "✅ Docker image built successfully"
+          echo "Image: github-discord-bot:${{ steps.meta.outputs.commit_short }}"
+          docker images github-discord-bot
+
+      - name: Run container health check
+        run: |
+          echo "Testing container startup..."
+          
+          # Note: This is a quick health test - full test requires environment
+          docker run --rm github-discord-bot:latest node --version
+          echo "✅ Container health check passed"
+
+      - name: Create deployment summary
+        run: |
+          echo "## Deployment Package Ready" > deployment-info.md
+          echo "" >> deployment-info.md
+          echo "### Build Information:" >> deployment-info.md
+          echo "- **Commit:** ${{ steps.meta.outputs.commit_short }}" >> deployment-info.md
+          echo "- **Timestamp:** ${{ steps.meta.outputs.timestamp }}" >> deployment-info.md
+          echo "- **Version:** ${{ steps.meta.outputs.version }}" >> deployment-info.md
+          echo "- **Branch:** main" >> deployment-info.md
+          echo "" >> deployment-info.md
+          echo "### Image Details:" >> deployment-info.md
+          echo "- **Tag:** github-discord-bot:${{ steps.meta.outputs.commit_short }}" >> deployment-info.md
+          echo "- **Latest Tag:** github-discord-bot:latest" >> deployment-info.md
+          echo "" >> deployment-info.md
+          echo "### Next Steps:" >> deployment-info.md
+          echo "1. Pull image from repository" >> deployment-info.md
+          echo "2. Update environment variables" >> deployment-info.md
+          echo "3. Deploy to Render or preferred hosting" >> deployment-info.md
+          echo "4. Monitor logs for any issues" >> deployment-info.md
+          cat deployment-info.md
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-package
+          path: deployment-info.md
+          retention-days: 90
+
+  notify-deployment:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Deployment notification
+        run: |
+          echo "## 🚀 Build Complete"
+          echo ""
+          echo "Latest build is ready for deployment to production."
+          echo ""
+          echo "**Status:** ${{ needs.build-and-push.result }}"
+          echo ""
+          echo "### Build Details:"
+          echo "- Repository: ${{ github.repository }}"
+          echo "- Branch: ${{ github.ref_name }}"
+          echo "- Commit: ${{ github.sha }}"
+          echo "- Actor: ${{ github.actor }}"
+          echo ""
+          echo "Visit: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

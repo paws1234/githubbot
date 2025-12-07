@@ -59,11 +59,29 @@ async function initializeDatabase() {
         githubToken TEXT NOT NULL,
         githubOwner TEXT NOT NULL,
         githubRepo TEXT NOT NULL,
+        gitlabToken TEXT,
+        gitlabUrl TEXT,
+        gitlabUsername TEXT,
+        currentPlatform TEXT DEFAULT 'github',
+        currentRepo TEXT,
+        currentBranch TEXT DEFAULT 'main',
         isActive BOOLEAN DEFAULT true,
         createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
+    
+    // Add new columns if they don't exist (for existing databases)
+    await pool.query(`
+      ALTER TABLE setups
+      ADD COLUMN IF NOT EXISTS gitlabToken TEXT,
+      ADD COLUMN IF NOT EXISTS gitlabUrl TEXT,
+      ADD COLUMN IF NOT EXISTS gitlabUsername TEXT,
+      ADD COLUMN IF NOT EXISTS currentPlatform TEXT DEFAULT 'github',
+      ADD COLUMN IF NOT EXISTS currentRepo TEXT,
+      ADD COLUMN IF NOT EXISTS currentBranch TEXT DEFAULT 'main'
+    `);
+    
     console.log('✅ Database tables initialized');
   } catch (err) {
     console.error('❌ Failed to initialize database:', err.message);
@@ -136,6 +154,12 @@ async function getSetupByWebhookId(webhookId) {
       githubToken: decrypt(row.githubtoken),
       githubOwner: row.githubowner,
       githubRepo: row.githubrepo,
+      gitlabToken: row.gitlabtoken ? decrypt(row.gitlabtoken) : null,
+      gitlabUrl: row.gitlaburl,
+      gitlabUsername: row.gitlabusername,
+      currentPlatform: row.currentplatform || 'github',
+      currentRepo: row.currentrepo,
+      currentBranch: row.currentbranch || 'main',
       isActive: row.isactive
     };
   } catch (err) {
@@ -169,6 +193,12 @@ async function getSetupById(id) {
       githubToken: decrypt(row.githubtoken),
       githubOwner: row.githubowner,
       githubRepo: row.githubrepo,
+      gitlabToken: row.gitlabtoken ? decrypt(row.gitlabtoken) : null,
+      gitlabUrl: row.gitlaburl,
+      gitlabUsername: row.gitlabusername,
+      currentPlatform: row.currentplatform || 'github',
+      currentRepo: row.currentrepo,
+      currentBranch: row.currentbranch || 'main',
       isActive: row.isactive
     };
   } catch (err) {
@@ -222,6 +252,30 @@ async function disableSetup(id) {
   }
 }
 
+/**
+ * Update current repository/project and branch for a setup
+ */
+async function updateCurrentRepo(setupId, platform, repo, branch = 'main') {
+  try {
+    const result = await pool.query(
+      `UPDATE setups 
+       SET currentPlatform = $1, currentRepo = $2, currentBranch = $3, updatedAt = CURRENT_TIMESTAMP
+       WHERE id = $4
+       RETURNING *`,
+      [platform, repo, branch, setupId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Setup not found');
+    }
+
+    return { success: true, message: 'Repository updated' };
+  } catch (err) {
+    console.error('❌ Failed to update current repo:', err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   initializeDatabase,
   createSetup,
@@ -229,5 +283,6 @@ module.exports = {
   getSetupById,
   getAllSetups,
   disableSetup,
+  updateCurrentRepo,
   pool
 };
