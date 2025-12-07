@@ -13,6 +13,7 @@ const {
 const github = require("./github");
 const workflows = require("./workflows");
 const setupRouter = require("./setupRouter");
+const oauthRouter = require("./oauthRouter");
 const db = require("./db");
 
 // Map to store active Discord clients
@@ -290,11 +291,20 @@ const port = process.env.PORT || 3000;
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static("public"));
 
 // Health check
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
+
+// Setup page
+app.get("/setup", (req, res) => {
+  res.sendFile(__dirname + "/../public/setup.html");
+});
+
+// OAuth routes
+app.use("/oauth", oauthRouter);
 
 // Setup API endpoints
 app.use("/api", setupRouter);

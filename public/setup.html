@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GitHub Discord Bot - Setup</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 100%;
+      padding: 40px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      color: #333;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      color: #666;
+      font-size: 16px;
+    }
+
+    .step {
+      display: none;
+    }
+
+    .step.active {
+      display: block;
+    }
+
+    .step-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+    }
+
+    .step-number {
+      background: #667eea;
+      color: white;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 12px;
+      font-weight: bold;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      text-decoration: none;
+      text-align: center;
+      display: inline-block;
+    }
+
+    .btn-primary {
+      background: #667eea;
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+
+    .oauth-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: none;
+      width: 100%;
+      margin-bottom: 12px;
+    }
+
+    .github-btn {
+      background: #24292e;
+      color: white;
+    }
+
+    .github-btn:hover {
+      background: #0d1117;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(36, 41, 46, 0.4);
+    }
+
+    .discord-btn {
+      background: #5865f2;
+      color: white;
+    }
+
+    .discord-btn:hover {
+      background: #4752c4;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(88, 101, 242, 0.4);
+    }
+
+    .select-group {
+      margin-top: 16px;
+    }
+
+    .select-label {
+      display: block;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #333;
+      background: white;
+      cursor: pointer;
+      transition: border-color 0.3s ease;
+    }
+
+    select:hover {
+      border-color: #667eea;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .user-info {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 20px;
+      border-left: 4px solid #667eea;
+    }
+
+    .user-info p {
+      color: #666;
+      font-size: 14px;
+      margin: 8px 0;
+    }
+
+    .user-info strong {
+      color: #333;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .spinner {
+      border: 4px solid #f0f0f0;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .error {
+      background: #fee;
+      border: 1px solid #fcc;
+      color: #c33;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .success {
+      background: #efe;
+      border: 1px solid #cfc;
+      color: #3c3;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .webhook-box {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 20px;
+      border: 2px dashed #667eea;
+    }
+
+    .webhook-box p {
+      color: #666;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .webhook-url {
+      background: white;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      padding: 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      word-break: break-all;
+      color: #333;
+      margin-bottom: 12px;
+    }
+
+    .copy-btn {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .copy-btn:hover {
+      background: #5568d3;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🤖 GitHub Discord Bot</h1>
+      <p>Connect your GitHub and Discord accounts</p>
+    </div>
+
+    <!-- Step 1: Start -->
+    <div class="step active" id="step-1">
+      <div class="step-title">
+        <span class="step-number">1</span>
+        Start Setup
+      </div>
+      <p style="color: #666; margin-bottom: 20px;">
+        This wizard will connect your GitHub and Discord accounts securely. Your tokens are encrypted and stored safely.
+      </p>
+      <div class="button-group">
+        <button class="btn btn-primary" onclick="startOAuth('github')">
+          🔐 Connect GitHub
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: Loading GitHub -->
+    <div class="step" id="step-loading-github">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>Redirecting to GitHub...</p>
+      </div>
+    </div>
+
+    <!-- Step 3: Discord OAuth -->
+    <div class="step" id="step-discord">
+      <div class="step-title">
+        <span class="step-number">2</span>
+        Connect Discord
+      </div>
+      <div class="user-info" id="github-info"></div>
+      <button class="oauth-button discord-btn" onclick="startOAuth('discord')">
+        🎮 Connect Discord
+      </button>
+    </div>
+
+    <!-- Step 4: Select Repository & Channel -->
+    <div class="step" id="step-select">
+      <div class="step-title">
+        <span class="step-number">3</span>
+        Select Configuration
+      </div>
+      
+      <div class="user-info" id="user-info"></div>
+
+      <div class="select-group">
+        <label class="select-label">Select GitHub Repository</label>
+        <select id="repo-select">
+          <option value="">Loading repositories...</option>
+        </select>
+      </div>
+
+      <div class="select-group">
+        <label class="select-label">Select Discord Server (Guild)</label>
+        <select id="guild-select" onchange="updateChannels()">
+          <option value="">Select a guild...</option>
+        </select>
+      </div>
+
+      <div class="select-group">
+        <label class="select-label">Select Discord Channel</label>
+        <select id="channel-select">
+          <option value="">Select a channel...</option>
+        </select>
+      </div>
+
+      <div class="button-group">
+        <button class="btn btn-primary" onclick="completeSetup()">
+          ✅ Complete Setup
+        </button>
+        <button class="btn btn-secondary" onclick="resetSetup()">
+          ← Start Over
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 5: Success -->
+    <div class="step" id="step-success">
+      <div class="step-title">
+        <span class="step-number">✓</span>
+        Setup Complete!
+      </div>
+      <div class="success">
+        ✅ Your setup is ready! Your tokens are encrypted and secure.
+      </div>
+      <div class="webhook-box">
+        <p><strong>GitHub Webhook URL:</strong></p>
+        <div class="webhook-url" id="webhook-url"></div>
+        <button class="copy-btn" onclick="copyToClipboard()">📋 Copy URL</button>
+        <p style="margin-top: 16px; font-size: 12px; color: #999;">
+          <strong>Next step:</strong> Go to your GitHub repository settings → Webhooks → Add webhook<br>
+          Paste the URL above, select "Let me select individual events" → Push events
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSession = null;
+    let sessionData = null;
+
+    // Get session from URL on page load
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(window.location.search);
+      const session = params.get('session');
+      const step = params.get('step');
+
+      if (session) {
+        currentSession = session;
+        loadSessionData();
+      }
+    });
+
+    function startOAuth(provider) {
+      if (provider === 'github') {
+        showStep('step-loading-github');
+        window.location.href = '/oauth/github';
+      } else if (provider === 'discord') {
+        showStep('step-loading-github');
+        window.location.href = `/oauth/discord?session=${currentSession}`;
+      }
+    }
+
+    async function loadSessionData() {
+      try {
+        const response = await fetch(`/oauth/session/${currentSession}`);
+        if (!response.ok) throw new Error('Session not found');
+        
+        sessionData = await response.json();
+        
+        if (sessionData.githubUser && !sessionData.discordUser) {
+          // User has GitHub, waiting for Discord
+          showStep('step-discord');
+          displayGithubInfo();
+        } else if (sessionData.githubUser && sessionData.discordUser) {
+          // Both connected, show selection
+          showStep('step-select');
+          displayUserInfo();
+          populateSelects();
+        }
+      } catch (err) {
+        console.error('Error loading session:', err);
+        alert('Session expired. Please start over.');
+        window.location.href = '/setup';
+      }
+    }
+
+    function displayGithubInfo() {
+      const html = `
+        <p><strong>GitHub User:</strong> ${sessionData.githubUser.login}</p>
+        <p><strong>Repositories:</strong> ${sessionData.repos.length} found</p>
+      `;
+      document.getElementById('github-info').innerHTML = html;
+    }
+
+    function displayUserInfo() {
+      const html = `
+        <p><strong>GitHub:</strong> ${sessionData.githubUser.login}</p>
+        <p><strong>Discord:</strong> ${sessionData.discordUser.username}</p>
+      `;
+      document.getElementById('user-info').innerHTML = html;
+    }
+
+    function populateSelects() {
+      // Populate repos
+      const repoSelect = document.getElementById('repo-select');
+      repoSelect.innerHTML = '<option value="">Select a repository...</option>';
+      sessionData.repos.forEach(repo => {
+        const option = document.createElement('option');
+        option.value = repo.full_name;
+        option.textContent = repo.full_name;
+        repoSelect.appendChild(option);
+      });
+
+      // Populate guilds
+      const guildSelect = document.getElementById('guild-select');
+      guildSelect.innerHTML = '<option value="">Select a guild...</option>';
+      sessionData.guilds.forEach(guild => {
+        const option = document.createElement('option');
+        option.value = guild.id;
+        option.textContent = guild.name;
+        guildSelect.appendChild(option);
+      });
+    }
+
+    async function updateChannels() {
+      const guildId = document.getElementById('guild-select').value;
+      if (!guildId) {
+        document.getElementById('channel-select').innerHTML = '<option value="">Select a channel...</option>';
+        return;
+      }
+
+      // In production, fetch channels from backend
+      // For now, show a placeholder
+      const channelSelect = document.getElementById('channel-select');
+      channelSelect.innerHTML = '<option value="">Loading channels...</option>';
+      
+      // This would need a backend endpoint to get channels for the selected guild
+      // using the bot token
+      setTimeout(() => {
+        channelSelect.innerHTML = '<option value="">Select a channel...</option>';
+      }, 500);
+    }
+
+    async function completeSetup() {
+      const repoName = document.getElementById('repo-select').value;
+      const guildId = document.getElementById('guild-select').value;
+      const channelId = document.getElementById('channel-select').value;
+
+      if (!repoName || !guildId) {
+        alert('Please select a repository and guild');
+        return;
+      }
+
+      try {
+        // For demo, use a placeholder channel ID
+        // In production, you'd need to fetch guild channels
+        const response = await fetch('/oauth/complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: currentSession,
+            repoName,
+            guildId,
+            channelId: channelId || guildId // Use guild ID if channel not selected
+          })
+        });
+
+        if (!response.ok) throw new Error('Setup failed');
+        const result = await response.json();
+
+        // Display webhook URL
+        document.getElementById('webhook-url').textContent = result.setup.webhookUrl;
+        showStep('step-success');
+      } catch (err) {
+        alert('Error completing setup: ' + err.message);
+      }
+    }
+
+    function copyToClipboard() {
+      const url = document.getElementById('webhook-url').textContent;
+      navigator.clipboard.writeText(url).then(() => {
+        alert('Webhook URL copied to clipboard!');
+      });
+    }
+
+    function resetSetup() {
+      window.location.href = '/setup';
+    }
+
+    function showStep(stepId) {
+      document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+      document.getElementById(stepId).classList.add('active');
+    }
+  </script>
+</body>
+</html>
