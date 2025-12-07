@@ -557,7 +557,30 @@ async function createDiscordBot(setupConfig) {
       o.setName("issue_number")
         .setDescription("Issue number of the task")
         .setRequired(true)
-    )
+    ),
+
+  // ANALYTICS & METRICS COMMANDS
+  new SlashCommandBuilder()
+    .setName("sprint-stats")
+    .setDescription("Show sprint burndown stats (open/closed PRs, velocity)")
+    .addIntegerOption(o =>
+      o.setName("week")
+        .setDescription("Week offset (0 = current week, -1 = last week)")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("dev-metrics")
+    .setDescription("Developer productivity metrics (not for punishment!)")
+    .addStringOption(o =>
+      o.setName("user")
+        .setDescription("GitHub username")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("stale-prs")
+    .setDescription("Find stale PRs stuck for 1+ days and create improvement tasks")
 
 ].map(c => c.toJSON());
 
@@ -1591,6 +1614,137 @@ Use: \`/merge-pr number:# method:squash\`
           message += `🔗 [View on GitHub](${result.url})`;
           
           await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      // ANALYTICS & METRICS HANDLERS
+
+      if (interaction.commandName === "sprint-stats") {
+        const weekOffset = interaction.options.getInteger("week") || 0;
+        try {
+          await interaction.deferReply();
+          const stats = await github.getSprintStats(githubToken, githubOwner, githubRepo, weekOffset);
+          
+          let message = `📊 **Sprint Statistics** - ${stats.repo}\n`;
+          message += `**Period:** ${stats.period}\n\n`;
+          message += `📈 **Burndown:**\n`;
+          message += `🟢 PRs Open: ${stats.prsOpen}\n`;
+          message += `✅ PRs Closed: ${stats.prsClosed}\n`;
+          message += `🐛 Issues Open: ${stats.issuesOpen}\n`;
+          message += `✅ Issues Closed: ${stats.issuesClosed}\n\n`;
+          message += `💨 **Velocity:** ${stats.velocity} (PRs closed + Issues closed)\n\n`;
+          
+          if (Object.keys(stats.issuesByUser).length > 0) {
+            message += `👥 **Issues Closed by User:**\n`;
+            Object.entries(stats.issuesByUser)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 5)
+              .forEach(([user, count]) => {
+                message += `• \`${user}\`: ${count} issues\n`;
+              });
+          }
+          
+          if (stats.topContributor) {
+            message += `\n⭐ **Top Contributor:** ${stats.topContributor[0]} (${stats.topContributor[1]} issues)`;
+          }
+          
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "dev-metrics") {
+        const user = interaction.options.getString("user", true);
+        try {
+          await interaction.deferReply();
+          const metrics = await github.getDeveloperMetrics(githubToken, githubOwner, githubRepo, user);
+          
+          let message = `📈 **Developer Metrics** - ${user}\n`;
+          message += `**Repo:** ${metrics.repo}\n\n`;
+          message += `📝 **PR Stats:**\n`;
+          message += `✅ Merged: ${metrics.prsMerged}\n`;
+          message += `🔄 Open: ${metrics.prsOpen}\n\n`;
+          message += `🐛 **Issues Closed:** ${metrics.issuesClosed}\n\n`;
+          message += `👀 **Code Review Metrics:**\n`;
+          message += `⏱️ Avg Review Turnaround: ${metrics.reviewTurnaroundHours} hours\n`;
+          message += `💬 Reviews Given: ${metrics.reviewsGiven}\n\n`;
+          message += `⭐ **Productivity Score:** ${metrics.productivity.toFixed(1)}`;
+          
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "stale-prs") {
+        try {
+          await interaction.deferReply();
+          const result = await github.getStalePRs(githubToken, githubOwner, githubRepo);
+          
+          if (result.totalStale === 0) {
+            await interaction.editReply(`✅ No stale PRs found in ${result.repo}`);
+          } else {
+            let message = `⚠️ **Stale PRs Report** - ${result.repo}\n`;
+            message += `**Total Stale:** ${result.totalStale} PRs\n\n`;
+            
+            // 1 day
+            if (result.stalePRs.oneDay.length > 0) {
+              message += `🟡 **1+ Days Old (${result.stalePRs.oneDay.length}):**\n`;
+              result.stalePRs.oneDay.slice(0, 3).forEach(pr => {
+                message += `#${pr.number} - ${pr.title.substring(0, 50)} (@${pr.author}, ${pr.daysOld}d)\n`;
+              });
+              if (result.stalePRs.oneDay.length > 3) message += `... +${result.stalePRs.oneDay.length - 3} more\n`;
+              message += '\n';
+            }
+            
+            // 3 days
+            if (result.stalePRs.threeDays.length > 0) {
+              message += `🟠 **3+ Days Old (${result.stalePRs.threeDays.length}):**\n`;
+              result.stalePRs.threeDays.slice(0, 3).forEach(pr => {
+                message += `#${pr.number} - ${pr.title.substring(0, 50)} (@${pr.author}, ${pr.daysOld}d)\n`;
+              });
+              if (result.stalePRs.threeDays.length > 3) message += `... +${result.stalePRs.threeDays.length - 3} more\n`;
+              message += '\n';
+            }
+            
+            // 1 week
+            if (result.stalePRs.oneWeek.length > 0) {
+              message += `🔴 **7+ Days Old (${result.stalePRs.oneWeek.length}):**\n`;
+              result.stalePRs.oneWeek.slice(0, 3).forEach(pr => {
+                message += `#${pr.number} - ${pr.title.substring(0, 50)} (@${pr.author}, ${pr.daysOld}d)\n`;
+              });
+              if (result.stalePRs.oneWeek.length > 3) message += `... +${result.stalePRs.oneWeek.length - 3} more\n`;
+              message += '\n';
+            }
+            
+            // 1+ week
+            if (result.stalePRs.older.length > 0) {
+              message += `💀 **7+ Days Old (${result.stalePRs.older.length}):**\n`;
+              result.stalePRs.older.slice(0, 3).forEach(pr => {
+                message += `#${pr.number} - ${pr.title.substring(0, 50)} (@${pr.author}, ${pr.daysOld}d)\n`;
+              });
+              if (result.stalePRs.older.length > 3) message += `... +${result.stalePRs.older.length - 3} more\n`;
+            }
+            
+            message += `\n💡 **Tip:** Use \`/create-task\` to create improvement tasks for stuck PRs!`;
+            
+            await interaction.editReply(message);
+          }
         } catch (err) {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });

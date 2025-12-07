@@ -1363,6 +1363,215 @@ async function closeTask(token, owner, repo, issueNumber) {
   }
 }
 
+async function getSprintStats(token, owner, repo, weekOffset = 0) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Calculate date range (7 days)
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + (7 - endDate.getDay()) - (weekOffset * 7));
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - 6);
+
+    // Get PRs
+    const prs = await octokit.pulls.list({
+      ...repoConfig,
+      state: 'all',
+      per_page: 100,
+      sort: 'updated',
+      direction: 'desc'
+    });
+
+    // Get issues
+    const issues = await octokit.issues.list({
+      ...repoConfig,
+      state: 'all',
+      per_page: 100,
+      sort: 'updated',
+      direction: 'desc'
+    });
+
+    // Filter by date range
+    const prsClosed = (prs.data || []).filter(pr => {
+      const closedAt = pr.closed_at ? new Date(pr.closed_at) : null;
+      return pr.state === 'closed' && closedAt && closedAt >= startDate && closedAt <= endDate;
+    });
+
+    const prsOpen = (prs.data || []).filter(pr => pr.state === 'open');
+
+    const issuesClosed = (issues.data || []).filter(issue => {
+      const closedAt = issue.closed_at ? new Date(issue.closed_at) : null;
+      return issue.state === 'closed' && closedAt && closedAt >= startDate && closedAt <= endDate;
+    });
+
+    const issuesOpen = (issues.data || []).filter(issue => issue.state === 'open');
+
+    // Count issues per user
+    const issuesByUser = {};
+    issuesClosed.forEach(issue => {
+      const user = issue.user.login;
+      issuesByUser[user] = (issuesByUser[user] || 0) + 1;
+    });
+
+    // Calculate velocity (issues closed + PRs merged)
+    const velocity = prsClosed.length + issuesClosed.length;
+
+    return {
+      repo: `${owner}/${repo}`,
+      period: `${startDate.toDateString()} - ${endDate.toDateString()}`,
+      prsOpen: prsOpen.length,
+      prsClosed: prsClosed.length,
+      issuesOpen: issuesOpen.length,
+      issuesClosed: issuesClosed.length,
+      velocity: velocity,
+      issuesByUser: issuesByUser,
+      topContributor: Object.entries(issuesByUser).sort((a, b) => b[1] - a[1])[0] || null
+    };
+  } catch (err) {
+    throw new Error(`Failed to get sprint stats: ${err.message}`);
+  }
+}
+
+async function getDeveloperMetrics(token, owner, repo, username) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get PRs authored by user
+    const authoredPRs = await octokit.pulls.list({
+      ...repoConfig,
+      state: 'all',
+      creator: username,
+      per_page: 100
+    });
+
+    // Get issues closed by user
+    const closedIssues = await octokit.issues.list({
+      ...repoConfig,
+      state: 'closed',
+      assignee: username,
+      per_page: 100
+    });
+
+    // Get all PRs for review metrics
+    const allPRs = await octokit.pulls.list({
+      ...repoConfig,
+      state: 'closed',
+      per_page: 100
+    });
+
+    // Calculate review turnaround time (average time from creation to first review)
+    let totalReviewTime = 0;
+    let reviewCount = 0;
+
+    for (const pr of allPRs.data || []) {
+      const reviews = await octokit.pulls.listReviews({
+        ...repoConfig,
+        pull_number: pr.number,
+        per_page: 10
+      }).catch(() => ({ data: [] }));
+
+      if (reviews.data && reviews.data.length > 0) {
+        const firstReview = reviews.data[0];
+        const createdAt = new Date(pr.created_at);
+        const reviewedAt = new Date(firstReview.submitted_at || firstReview.created_at);
+        const timeToReview = (reviewedAt - createdAt) / (1000 * 60 * 60); // hours
+        totalReviewTime += timeToReview;
+        reviewCount++;
+      }
+    }
+
+    const avgReviewTurnaround = reviewCount > 0 ? (totalReviewTime / reviewCount).toFixed(1) : 0;
+
+    // Count review comments given by user
+    let reviewComments = 0;
+    for (const pr of allPRs.data || []) {
+      const reviews = await octokit.pulls.listReviews({
+        ...repoConfig,
+        pull_number: pr.number,
+        per_page: 100
+      }).catch(() => ({ data: [] }));
+
+      const userReviews = (reviews.data || []).filter(r => r.user.login === username);
+      reviewComments += userReviews.length;
+    }
+
+    const prsMerged = (authoredPRs.data || []).filter(pr => pr.state === 'closed' && pr.merged_at).length;
+    const prsOpen = (authoredPRs.data || []).filter(pr => pr.state === 'open').length;
+
+    return {
+      username: username,
+      repo: `${owner}/${repo}`,
+      prsMerged: prsMerged,
+      prsOpen: prsOpen,
+      issuesClosed: closedIssues.data?.length || 0,
+      reviewTurnaroundHours: avgReviewTurnaround,
+      reviewsGiven: reviewComments,
+      productivity: (prsMerged + (closedIssues.data?.length || 0) + reviewComments) / 3 // simple score
+    };
+  } catch (err) {
+    throw new Error(`Failed to get developer metrics: ${err.message}`);
+  }
+}
+
+async function getStalePRs(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const prs = await octokit.pulls.list({
+      ...repoConfig,
+      state: 'open',
+      per_page: 100,
+      sort: 'updated',
+      direction: 'asc'
+    });
+
+    const now = new Date();
+    const stalePRs = {
+      oneDay: [],
+      threeDays: [],
+      oneWeek: [],
+      older: []
+    };
+
+    (prs.data || []).forEach(pr => {
+      const updatedAt = new Date(pr.updated_at);
+      const daysOld = Math.floor((now - updatedAt) / (1000 * 60 * 60 * 24));
+
+      const prInfo = {
+        number: pr.number,
+        title: pr.title,
+        author: pr.user.login,
+        daysOld: daysOld,
+        url: pr.html_url,
+        createdAt: pr.created_at,
+        reviewsRequested: pr.requested_reviewers?.length || 0
+      };
+
+      if (daysOld >= 7) {
+        stalePRs.older.push(prInfo);
+      } else if (daysOld >= 3) {
+        stalePRs.oneWeek.push(prInfo);
+      } else if (daysOld >= 1) {
+        stalePRs.threeDays.push(prInfo);
+      } else {
+        stalePRs.oneDay.push(prInfo);
+      }
+    });
+
+    return {
+      repo: `${owner}/${repo}`,
+      timestamp: now.toISOString(),
+      stalePRs: stalePRs,
+      totalStale: stalePRs.oneDay.length + stalePRs.threeDays.length + stalePRs.oneWeek.length + stalePRs.older.length
+    };
+  } catch (err) {
+    throw new Error(`Failed to get stale PRs: ${err.message}`);
+  }
+}
+
 
 module.exports = {
   createPR,
@@ -1415,5 +1624,8 @@ module.exports = {
   createTaskIssue,
   updateTaskProgress,
   getTaskList,
-  closeTask
+  closeTask,
+  getSprintStats,
+  getDeveloperMetrics,
+  getStalePRs
 };
