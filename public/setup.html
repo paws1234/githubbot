@@ -568,6 +568,90 @@
     let currentSession = null;
     let sessionData = null;
 
+    // State Management - Save and restore form data
+    const STORAGE_PREFIX = 'github-discord-bot-setup-';
+
+    function saveFormState() {
+      const state = {
+        timestamp: Date.now(),
+        sessionId: currentSession,
+        repo: document.getElementById('repo-select')?.value || '',
+        guild: document.getElementById('guild-select')?.value || '',
+        channel: document.getElementById('channel-select')?.value || '',
+        manualChannel: document.getElementById('manual-channel-id')?.value || ''
+      };
+      sessionStorage.setItem(STORAGE_PREFIX + currentSession, JSON.stringify(state));
+      console.log('✅ Form state saved:', state);
+    }
+
+    function restoreFormState() {
+      if (!currentSession) return;
+      
+      const saved = sessionStorage.getItem(STORAGE_PREFIX + currentSession);
+      if (!saved) return;
+      
+      try {
+        const state = JSON.parse(saved);
+        console.log('♻️ Restoring form state:', state);
+        
+        // Restore selections after a short delay to ensure elements are populated
+        setTimeout(() => {
+          if (state.repo) {
+            const repoSelect = document.getElementById('repo-select');
+            if (repoSelect) {
+              repoSelect.value = state.repo;
+            }
+          }
+          
+          if (state.guild) {
+            const guildSelect = document.getElementById('guild-select');
+            if (guildSelect) {
+              guildSelect.value = state.guild;
+              // Trigger channel load for this guild
+              updateChannels();
+              
+              // Restore channel selection after channels load
+              setTimeout(() => {
+                if (state.channel) {
+                  const channelSelect = document.getElementById('channel-select');
+                  if (channelSelect && channelSelect.querySelector(`option[value="${state.channel}"]`)) {
+                    channelSelect.value = state.channel;
+                  }
+                }
+                if (state.manualChannel) {
+                  const manualInput = document.getElementById('manual-channel-id');
+                  if (manualInput) {
+                    manualInput.value = state.manualChannel;
+                  }
+                }
+              }, 500);
+            }
+          }
+        }, 100);
+      } catch (err) {
+        console.error('Error restoring form state:', err);
+      }
+    }
+
+    function clearFormState() {
+      if (currentSession) {
+        sessionStorage.removeItem(STORAGE_PREFIX + currentSession);
+        console.log('🗑️ Form state cleared');
+      }
+    }
+
+    // Save form state on every change
+    function setupAutoSave() {
+      const inputs = ['repo-select', 'guild-select', 'channel-select', 'manual-channel-id'];
+      inputs.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+          element.addEventListener('change', saveFormState);
+          element.addEventListener('input', saveFormState);
+        }
+      });
+    }
+
     // Custom Modal Functions
     function showModal(title, message, type = 'info', details = null) {
       const modal = document.getElementById('modal');
@@ -621,8 +705,18 @@
 
       if (session) {
         currentSession = session;
+        setupAutoSave();
         loadSessionData();
       }
+
+      // Detect when user comes back from adding bot to server (focus event)
+      window.addEventListener('focus', () => {
+        if (currentSession && sessionData?.discordUser) {
+          console.log('👀 Page regained focus - refreshing guild and channel data...');
+          // Refresh the guilds list in case user added bot to a new server
+          refreshGuildsList();
+        }
+      });
     });
 
     function startOAuth(provider) {
@@ -651,6 +745,8 @@
           showStep('step-select');
           displayUserInfo();
           populateSelects();
+          // Restore form state after populating selects
+          restoreFormState();
         }
       } catch (err) {
         console.error('Error loading session:', err);
@@ -704,6 +800,49 @@
 
       // Show bot invite box on first load (before guild selection)
       showBotInviteBox();
+    }
+
+    async function refreshGuildsList() {
+      try {
+        console.log('🔄 Fetching updated guilds list...');
+        const response = await fetch(`/oauth/session/${currentSession}`);
+        if (!response.ok) throw new Error('Failed to refresh session');
+        
+        const updatedSession = await response.json();
+        
+        // Check if new guilds were added
+        const oldGuildIds = sessionData.guilds.map(g => g.id).sort();
+        const newGuildIds = updatedSession.guilds.map(g => g.id).sort();
+        const hasNewGuilds = JSON.stringify(oldGuildIds) !== JSON.stringify(newGuildIds);
+        
+        if (hasNewGuilds) {
+          console.log('✨ New guilds detected! Updating list...');
+          sessionData = updatedSession;
+          
+          // Repopulate guilds dropdown
+          const guildSelect = document.getElementById('guild-select');
+          const currentGuild = guildSelect.value; // Save current selection
+          
+          guildSelect.innerHTML = '<option value="">Select a guild...</option>';
+          sessionData.guilds.forEach(guild => {
+            const option = document.createElement('option');
+            option.value = guild.id;
+            option.textContent = guild.name;
+            guildSelect.appendChild(option);
+          });
+          
+          // Restore previous guild selection if it still exists
+          if (currentGuild && guildSelect.querySelector(`option[value="${currentGuild}"]`)) {
+            guildSelect.value = currentGuild;
+          } else {
+            // Clear channels if guild was lost
+            document.getElementById('channel-select').innerHTML = '<option value="">Select a channel...</option>';
+            hideBotInviteBox();
+          }
+        }
+      } catch (err) {
+        console.error('Error refreshing guilds list:', err);
+      }
     }
 
     function showBotInviteBox() {
@@ -824,6 +963,9 @@
         if (!response.ok) throw new Error('Setup failed');
         const result = await response.json();
 
+        // Save state BEFORE showing success (so it's available after refresh)
+        saveFormState();
+
         // Display webhook URL
         document.getElementById('webhook-url').textContent = result.setup.webhookUrl;
         showStep('step-success');
@@ -855,6 +997,7 @@
     }
 
     function resetSetup() {
+      clearFormState();
       window.location.href = '/setup';
     }
 
