@@ -10,10 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-    
     services:
       postgres:
         image: postgres:15-alpine
@@ -174,7 +170,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.node-version }}
+          name: test-results
           path: test-report.md
           retention-days: 30
 
