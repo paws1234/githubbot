@@ -196,23 +196,35 @@ client.on("ready", () => {
         const name = interaction.options.getString("name", true);
         const base = interaction.options.getString("base") || "main";
 
-        await interaction.deferReply();
         try {
+          await interaction.deferReply();
           const result = await github.createBranch(githubToken, githubOwner, githubRepo, name, base);
           await interaction.editReply(`🌿 Branch **${name}** created from **${base}** successfully!`);
         } catch (err) {
           console.error(err);
-          await interaction.editReply(`❌ Failed to create branch: ${err.message}`);
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ Failed to create branch: ${err.message}`, ephemeral: true });
+          } else if (interaction.deferred) {
+            await interaction.editReply(`❌ Failed to create branch: ${err.message}`);
+          }
         }
       }
 
     } catch (err) {
       console.error("Error handling command:", err);
       const errorMessage = err.message || "An unexpected error occurred.";
-      if (!interaction.replied) {
-        await interaction.reply({ content: `❌ Error: ${errorMessage}`, ephemeral: true });
-      } else {
-        await interaction.editReply(`❌ Error: ${errorMessage}`);
+      if (!interaction.replied && !interaction.deferred) {
+        try {
+          await interaction.reply({ content: `❌ Error: ${errorMessage}`, ephemeral: true });
+        } catch (e) {
+          console.error("Failed to send error reply:", e);
+        }
+      } else if (interaction.deferred) {
+        try {
+          await interaction.editReply(`❌ Error: ${errorMessage}`);
+        } catch (e) {
+          console.error("Failed to edit error reply:", e);
+        }
       }
     }
   });
