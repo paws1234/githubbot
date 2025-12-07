@@ -254,9 +254,12 @@ async function updateSetup(id, updates) {
 
     // Always update updatedAt
     fields.push(`updatedAt = CURRENT_TIMESTAMP`);
+    
+    // Add id to WHERE clause
     values.push(id);
+    const whereParam = paramCount;
 
-    const query = `UPDATE setups SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+    const query = `UPDATE setups SET ${fields.join(', ')} WHERE id = $${whereParam} RETURNING *`;
     
     const result = await pool.query(query, values);
 
