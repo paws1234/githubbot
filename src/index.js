@@ -299,6 +299,11 @@ app.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
+// Root redirect to setup page
+app.get("/", (req, res) => {
+  res.redirect("/setup");
+});
+
 // Setup page
 app.get("/setup", (req, res) => {
   res.sendFile("/app/public/setup.html");
