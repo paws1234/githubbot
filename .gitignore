@@ -9,11 +9,8 @@ package-lock.json
 npm-debug.log
 yarn-error.log
 
-# Database
-data/
-*.db
-*.db-shm
-*.db-wal
+# Database (using PostgreSQL on Render, no local storage)
+# No local database files needed
 
 # OS files
 .DS_Store
