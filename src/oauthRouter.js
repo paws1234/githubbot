@@ -191,6 +191,12 @@ router.post('/complete', async (req, res) => {
 
 // Helper functions
 function getBaseUrl(req) {
+  // Use environment variable if set (recommended for production)
+  if (process.env.APP_BASE_URL) {
+    return process.env.APP_BASE_URL;
+  }
+
+  // Fallback to request headers
   const protocol = req.protocol || 'https';
   const host = req.get('host') || 'localhost:3000';
   return `${protocol}://${host}`;
