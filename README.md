@@ -23,14 +23,36 @@ All packed into a **Node.js + Docker** stack.
 
 ## 2. Setup Discord Bot
 
-1. Go to the Discord Developer Portal.
+### A. Create Bot Application
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications).
 2. Create an **Application**, then add a **Bot**.
-3. Enable the `applications.commands` scope.
+3. Enable the `applications.commands` scope in OAuth2.
 4. Copy:
-   - **Bot Token** → `DISCORD_TOKEN`
-   - **Application ID** → `DISCORD_CLIENT_ID`
-5. Invite the bot to your server with `bot` and `applications.commands` scopes.
-6. Grab the **Guild (Server) ID** and a **Channel ID** for notifications.
+   - **Bot Token** → `DISCORD_BOT_TOKEN`
+   - **Application ID** → `DISCORD_BOT_CLIENT_ID`
+
+### B. Add Bot to Your Server (with Admin Permissions)
+
+**Option 1: Easy (Recommended)**
+- Replace `YOUR_CLIENT_ID` with your bot's Application ID and open this link:
+```
+https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=8&scope=bot
+```
+The `permissions=8` means "Administrator"
+
+**Option 2: Manual**
+1. Go to **OAuth2 → URL Generator** in Discord Developer Portal
+2. Check scopes: `bot`
+3. Check permissions: `Administrator`
+4. Copy the generated URL and open it
+
+### C. Get Server & Channel Info
+
+5. Grab the **Guild (Server) ID** and a **Channel ID** for notifications:
+   - Enable Developer Mode in Discord (User Settings → Advanced → Developer Mode)
+   - Right-click your server name → Copy Server ID
+   - Right-click a channel → Copy Channel ID
 
 ---
 
