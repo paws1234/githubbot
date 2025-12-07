@@ -432,7 +432,7 @@
     </div>
 
     <!-- Bot Invite Link -->
-    <div style="background: #f0f7ff; border: 2px solid #667eea; border-radius: 8px; padding: 16px; margin-bottom: 24px;">
+    <div id="bot-invite-box" style="background: #f0f7ff; border: 2px solid #667eea; border-radius: 8px; padding: 16px; margin-bottom: 24px; display: none;">
       <p style="color: #333; font-weight: 600; margin: 0 0 12px 0; font-size: 14px;">📌 First Time Setup?</p>
       <p style="color: #666; font-size: 13px; margin: 0 0 12px 0;">Before starting, add the bot to your Discord server with admin permissions:</p>
       <a href="https://discord.com/api/oauth2/authorize?client_id=1447100597009518675&permissions=8&scope=bot" target="_blank" class="btn btn-primary" style="text-decoration: none; display: inline-block; margin-bottom: 8px;">
@@ -497,7 +497,7 @@
 
       <div class="select-group">
         <label class="select-label">Select Discord Server (Guild)</label>
-        <select id="guild-select" onchange="updateChannels()">
+        <select id="guild-select" onchange="onGuildChange()">
           <option value="">Select a guild...</option>
         </select>
       </div>
@@ -701,6 +701,23 @@
         option.textContent = guild.name;
         guildSelect.appendChild(option);
       });
+
+      // Show bot invite box on first load (before guild selection)
+      showBotInviteBox();
+    }
+
+    function showBotInviteBox() {
+      // Show the invite box when no guild is selected yet
+      const guildId = document.getElementById('guild-select').value;
+      const inviteBox = document.getElementById('bot-invite-box');
+      inviteBox.style.display = guildId ? 'none' : 'block';
+    }
+
+    function onGuildChange() {
+      // Hide the bot invite box when guild is selected
+      showBotInviteBox();
+      // Then fetch channels for the selected guild
+      updateChannels();
     }
 
     async function updateChannels() {
