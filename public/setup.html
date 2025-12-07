@@ -713,9 +713,29 @@
       inviteBox.style.display = guildId ? 'none' : 'block';
     }
 
+    function showBotInviteBoxForGuild() {
+      // Show the invite box when bot is not in the selected guild (no channels found)
+      const inviteBox = document.getElementById('bot-invite-box');
+      inviteBox.style.display = 'block';
+    }
+
+    function hideBotInviteBox() {
+      const inviteBox = document.getElementById('bot-invite-box');
+      inviteBox.style.display = 'none';
+    }
+
     function onGuildChange() {
-      // Hide the bot invite box when guild is selected
-      showBotInviteBox();
+      // Reset channel selection when guild changes
+      const channelSelect = document.getElementById('channel-select');
+      const manualInput = document.getElementById('manual-channel-input');
+      
+      channelSelect.innerHTML = '<option value="">Loading channels...</option>';
+      manualInput.style.display = 'none';
+      document.getElementById('manual-channel-id').value = '';
+      
+      // Hide invite box while loading
+      hideBotInviteBox();
+      
       // Then fetch channels for the selected guild
       updateChannels();
     }
@@ -723,6 +743,7 @@
     async function updateChannels() {
       const guildId = document.getElementById('guild-select').value;
       const channelSelect = document.getElementById('channel-select');
+      const manualInput = document.getElementById('manual-channel-input');
       
       if (!guildId) {
         channelSelect.innerHTML = '<option value="">Select a guild first...</option>';
@@ -741,15 +762,17 @@
         const channels = data.channels || [];
         
         if (!channels || channels.length === 0) {
-          // No channels found - show manual input instead
-          console.warn('⚠️ No channels returned from API, showing manual input');
-          channelSelect.innerHTML = '<option value="">Enter channel ID below</option>';
-          document.getElementById('manual-channel-input').style.display = 'block';
+          // No channels found - bot not in this guild, show invite link
+          console.warn('⚠️ Bot not in this guild, showing invite link');
+          channelSelect.innerHTML = '<option value="">Add bot to this server first</option>';
+          manualInput.style.display = 'none';
+          showBotInviteBoxForGuild();
           return;
         }
         
-        // Hide manual input if we have channels
-        document.getElementById('manual-channel-input').style.display = 'none';
+        // Channels found - bot is in guild, hide invite box and show channels
+        hideBotInviteBox();
+        manualInput.style.display = 'none';
         channelSelect.innerHTML = '<option value="">Select a channel...</option>';
         channels.forEach(channel => {
           const option = document.createElement('option');
@@ -759,10 +782,10 @@
         });
       } catch (err) {
         console.error('Error fetching channels:', err);
-        // Show manual input as fallback
-        channelSelect.innerHTML = '<option value="">Enter channel ID below</option>';
-        document.getElementById('manual-channel-input').style.display = 'block';
-        channelSelect.appendChild(option);
+        // On error, show invite link and manual input as fallback
+        channelSelect.innerHTML = '<option value="">Select or enter channel ID below</option>';
+        manualInput.style.display = 'block';
+        showBotInviteBoxForGuild();
       }
     }
 
