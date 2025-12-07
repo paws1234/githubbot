@@ -14,7 +14,10 @@ const userSessions = new Map();
 router.get('/github', (req, res) => {
   try {
     const redirectUri = `${getBaseUrl(req)}/oauth/github/callback`;
+    console.log(`🔗 GitHub OAuth - Redirect URI: ${redirectUri}`);
+    console.log(`🔗 APP_BASE_URL env: ${process.env.APP_BASE_URL}`);
     const url = oauth.getGithubOAuthUrl(redirectUri);
+    console.log(`🔗 GitHub OAuth URL: ${url}`);
     res.redirect(url);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -159,8 +162,9 @@ router.post('/complete', async (req, res) => {
     const [owner, repo] = repoName.split('/');
 
     // Create setup in database
+    // Use bot token from environment (not the OAuth user token)
     const setup = await db.createSetup({
-      discordToken: session.discordToken,
+      discordToken: process.env.DISCORD_BOT_TOKEN,
       discordClientId: process.env.DISCORD_BOT_CLIENT_ID,
       discordGuildId: guildId,
       discordChannelId: channelId,
