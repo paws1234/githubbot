@@ -495,6 +495,10 @@
         <select id="channel-select">
           <option value="">Select a channel...</option>
         </select>
+        <div id="manual-channel-input" style="margin-top: 8px; display: none;">
+          <input type="text" id="manual-channel-id" placeholder="Enter channel ID manually (e.g., 1234567890)" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px;">
+          <p style="font-size: 12px; color: #999; margin-top: 4px;">📌 To find your channel ID: Enable Developer Mode in Discord Settings → Right-click channel → Copy ID</p>
+        </div>
       </div>
 
       <div class="button-group">
@@ -708,17 +712,15 @@
         const channels = data.channels || [];
         
         if (!channels || channels.length === 0) {
-          // No channels found - use General as default with guild ID as channel ID
-          console.warn('⚠️ No channels returned from API, using General fallback');
-          channelSelect.innerHTML = '';
-          const option = document.createElement('option');
-          option.value = guildId; // Use guild ID as fallback
-          option.textContent = '# general (default)';
-          option.selected = true;
-          channelSelect.appendChild(option);
+          // No channels found - show manual input instead
+          console.warn('⚠️ No channels returned from API, showing manual input');
+          channelSelect.innerHTML = '<option value="">Enter channel ID below</option>';
+          document.getElementById('manual-channel-input').style.display = 'block';
           return;
         }
         
+        // Hide manual input if we have channels
+        document.getElementById('manual-channel-input').style.display = 'none';
         channelSelect.innerHTML = '<option value="">Select a channel...</option>';
         channels.forEach(channel => {
           const option = document.createElement('option');
@@ -728,12 +730,9 @@
         });
       } catch (err) {
         console.error('Error fetching channels:', err);
-        // Fallback to using guild ID as channel ID
-        channelSelect.innerHTML = '';
-        const option = document.createElement('option');
-        option.value = guildId;
-        option.textContent = '# general (fallback)';
-        option.selected = true;
+        // Show manual input as fallback
+        channelSelect.innerHTML = '<option value="">Enter channel ID below</option>';
+        document.getElementById('manual-channel-input').style.display = 'block';
         channelSelect.appendChild(option);
       }
     }
@@ -741,7 +740,13 @@
     async function completeSetup() {
       const repoName = document.getElementById('repo-select').value;
       const guildId = document.getElementById('guild-select').value;
-      const channelId = document.getElementById('channel-select').value;
+      let channelId = document.getElementById('channel-select').value;
+      
+      // Check if user manually entered a channel ID
+      const manualInput = document.getElementById('manual-channel-id').value.trim();
+      if (manualInput) {
+        channelId = manualInput;
+      }
 
       if (!repoName || !guildId || !channelId) {
         showModal(
