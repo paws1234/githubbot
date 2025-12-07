@@ -1,0 +1,20 @@
+{
+  "name": "github-discord-automation",
+  "version": "1.0.0",
+  "description": "Mini n8n-like GitHub ↔ Discord automation server (PR creation, approvals, comments, notifications).",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@octokit/rest": "^21.0.0",
+    "body-parser": "^1.20.3",
+    "crypto": "^1.0.1",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "sqlite3": "^5.1.6",
+    "uuid": "^9.0.0"
+  }
+}

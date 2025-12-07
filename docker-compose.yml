@@ -1,0 +1,14 @@
+services:
+  app:
+    build: .
+    container_name: github-discord-automation
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/data
+    environment:
+      - DB_PATH=/data/setups.db
+      - NODE_ENV=production

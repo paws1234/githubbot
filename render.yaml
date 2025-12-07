@@ -1,0 +1,40 @@
+services:
+  - type: web
+    name: github-discord-automation
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/setups
+    
+    # Persistent disk for SQLite database
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    
+    # Environment variables
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DB_PATH
+        value: /data/setups.db
+      
+      # IMPORTANT: Set these in Render dashboard, not here!
+      # These are placeholders only
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+    
+    # Build settings
+    buildCommand: npm install
+    startCommand: npm start
+    
+    # Auto-redeploy on git push
+    autoDeploy: true
+    
+    # Region
+    region: oregon
