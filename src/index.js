@@ -248,7 +248,8 @@ client.on("ready", () => {
     );
     console.log(`✅ Commands registered for guild ${discordGuildId}`);
   } catch (err) {
-    console.error(`Failed to register commands:`, err);
+    console.warn(`⚠️ Failed to register commands (make sure bot is in the server):`, err.message);
+    // Continue anyway - commands might already be registered
   }
 
   client.on("ready", () => {
