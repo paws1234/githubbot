@@ -139,6 +139,13 @@ client.on("ready", () => {
     if (!interaction.isChatInputCommand()) return;
 
     try {
+      // Get setup config from client
+      const { discordToken, githubToken, githubOwner, githubRepo } = client.setupConfig || {};
+      
+      if (!discordToken || !githubToken || !githubOwner || !githubRepo) {
+        return interaction.reply({ content: "❌ Setup not configured properly", ephemeral: true });
+      }
+
       if (interaction.commandName === "create-pr") {
         const branch = interaction.options.getString("branch", true);
         const title = interaction.options.getString("title", true);
