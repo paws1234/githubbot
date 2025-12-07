@@ -268,7 +268,18 @@ async function updateSetup(id, updates) {
     }
 
     const row = result.rows[0];
-    return decryptSetup(row);
+    return {
+      id: row.id,
+      webhookId: row.webhookid,
+      discordToken: decrypt(row.discordtoken),
+      discordClientId: row.discordclientid,
+      discordGuildId: row.discordguildid,
+      discordChannelId: row.discordchannelid,
+      githubToken: decrypt(row.githubtoken),
+      githubOwner: row.githubowner,
+      githubRepo: row.githubrepo,
+      isActive: row.isactive
+    };
   } catch (err) {
     console.error('❌ Failed to update setup:', err.message);
     throw err;
