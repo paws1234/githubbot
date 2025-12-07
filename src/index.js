@@ -282,7 +282,160 @@ async function createDiscordBot(setupConfig) {
 
   new SlashCommandBuilder()
     .setName("workflow-help")
-    .setDescription("Show complete git workflow for branch work")
+    .setDescription("Show complete git workflow for branch work"),
+
+  // NEW COMMANDS - Tier 1
+  new SlashCommandBuilder()
+    .setName("rename-branch")
+    .setDescription("Rename a GitHub branch")
+    .addStringOption(o =>
+      o.setName("old_name")
+        .setDescription("Current branch name")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("new_name")
+        .setDescription("New branch name")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("compare-branches")
+    .setDescription("Compare two branches (commits ahead/behind)")
+    .addStringOption(o =>
+      o.setName("base")
+        .setDescription("Base branch")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("head")
+        .setDescription("Compare branch")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("sync-branch")
+    .setDescription("Sync branch with main (pull latest)")
+    .addStringOption(o =>
+      o.setName("branch")
+        .setDescription("Branch name to sync")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("target")
+        .setDescription("Target branch (default: main)")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("assign-issue")
+    .setDescription("Assign an issue to team members")
+    .addIntegerOption(o =>
+      o.setName("number")
+        .setDescription("Issue number")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("assignees")
+        .setDescription("GitHub usernames (comma-separated)")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("link-issue-pr")
+    .setDescription("Link a PR to an issue (auto-close on merge)")
+    .addIntegerOption(o =>
+      o.setName("pr_number")
+        .setDescription("PR number")
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("issue_number")
+        .setDescription("Issue number")
+        .setRequired(true)
+    ),
+
+  // NEW COMMANDS - Tier 2
+  new SlashCommandBuilder()
+    .setName("request-changes")
+    .setDescription("Request changes on a PR")
+    .addIntegerOption(o =>
+      o.setName("number")
+        .setDescription("PR number")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("message")
+        .setDescription("Review message/feedback")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("get-pr-diff")
+    .setDescription("Show files changed in a PR")
+    .addIntegerOption(o =>
+      o.setName("number")
+        .setDescription("PR number")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("auto-merge-pr")
+    .setDescription("Enable auto-merge on a PR")
+    .addIntegerOption(o =>
+      o.setName("number")
+        .setDescription("PR number")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("method")
+        .setDescription("merge | squash | rebase")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("check-conflicts")
+    .setDescription("Check if a PR has merge conflicts")
+    .addIntegerOption(o =>
+      o.setName("number")
+        .setDescription("PR number")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("protect-branch")
+    .setDescription("Protect a branch (require checks + reviews)")
+    .addStringOption(o =>
+      o.setName("branch")
+        .setDescription("Branch name to protect")
+        .setRequired(true)
+    ),
+
+  // NEW COMMANDS - Tier 3
+  new SlashCommandBuilder()
+    .setName("code-review-status")
+    .setDescription("List PRs awaiting review"),
+
+  new SlashCommandBuilder()
+    .setName("team-stats")
+    .setDescription("Show team stats (PRs merged, issues closed, commits)"),
+
+  new SlashCommandBuilder()
+    .setName("deployment-status")
+    .setDescription("Check latest deployment status"),
+
+  new SlashCommandBuilder()
+    .setName("rollback")
+    .setDescription("Create a rollback release to previous version")
+    .addStringOption(o =>
+      o.setName("tag")
+        .setDescription("Target release tag (e.g., v1.0.0)")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("github-status")
+    .setDescription("Check GitHub API status")
 
 ].map(c => c.toJSON());
 
@@ -753,6 +906,265 @@ Use: \`/merge-pr number:# method:squash\`
           await interaction.reply(workflow);
         } catch (err) {
           await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+        }
+      }
+
+      // NEW COMMAND HANDLERS
+
+      if (interaction.commandName === "rename-branch") {
+        const oldName = interaction.options.getString("old_name", true);
+        const newName = interaction.options.getString("new_name", true);
+        try {
+          await interaction.deferReply();
+          const result = await github.renameBranch(githubToken, githubOwner, githubRepo, oldName, newName);
+          await interaction.editReply(`✅ Branch renamed: **${oldName}** → **${newName}**`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "compare-branches") {
+        const base = interaction.options.getString("base", true);
+        const head = interaction.options.getString("head", true);
+        try {
+          await interaction.deferReply();
+          const comparison = await github.compareBranches(githubToken, githubOwner, githubRepo, base, head);
+          const ahead = comparison.ahead_by || 0;
+          const behind = comparison.behind_by || 0;
+          const message = `📊 **Comparison: ${base}...${head}**\n\n**Ahead:** ${ahead} commits\n**Behind:** ${behind} commits\n\n${comparison.total_commits > 0 ? `Total commits: ${comparison.total_commits}` : "No differences"}`;
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "sync-branch") {
+        const branch = interaction.options.getString("branch", true);
+        const target = interaction.options.getString("target") || "main";
+        try {
+          await interaction.deferReply();
+          const result = await github.syncBranch(githubToken, githubOwner, githubRepo, branch, target);
+          await interaction.editReply(`✅ Branch **${branch}** synced with **${target}**`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "assign-issue") {
+        const number = interaction.options.getInteger("number", true);
+        const assigneesStr = interaction.options.getString("assignees", true);
+        const assignees = assigneesStr.split(",").map(a => a.trim());
+        try {
+          await interaction.deferReply();
+          const issue = await github.assignIssue(githubToken, githubOwner, githubRepo, number, assignees);
+          const assignedTo = assignees.join(", ");
+          await interaction.editReply(`✅ Issue #${number} assigned to: ${assignedTo}`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "link-issue-pr") {
+        const prNumber = interaction.options.getInteger("pr_number", true);
+        const issueNumber = interaction.options.getInteger("issue_number", true);
+        try {
+          await interaction.deferReply();
+          const result = await github.linkIssueToPR(githubToken, githubOwner, githubRepo, prNumber, issueNumber);
+          await interaction.editReply(`🔗 PR #${prNumber} linked to issue #${issueNumber}\n\nIssue will auto-close when PR merges!`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "request-changes") {
+        const number = interaction.options.getInteger("number", true);
+        const message = interaction.options.getString("message") || "Changes requested";
+        try {
+          await interaction.deferReply();
+          const review = await github.requestChanges(githubToken, githubOwner, githubRepo, number, message);
+          await interaction.editReply(`❌ Changes requested on PR #${number}\n\n**Feedback:** ${message}`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "get-pr-diff") {
+        const number = interaction.options.getInteger("number", true);
+        try {
+          await interaction.deferReply();
+          const files = await github.getPRDiff(githubToken, githubOwner, githubRepo, number);
+          if (files.length === 0) {
+            await interaction.editReply(`📭 No files changed in PR #${number}`);
+          } else {
+            const fileList = files.map(f => `\`${f.filename}\` (+${f.additions} -${f.deletions})`).join('\n');
+            await interaction.editReply(`📝 **Files changed in PR #${number}:**\n${fileList}`);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "auto-merge-pr") {
+        const number = interaction.options.getInteger("number", true);
+        const method = interaction.options.getString("method") || "merge";
+        try {
+          await interaction.deferReply();
+          const result = await github.autoMergePR(githubToken, githubOwner, githubRepo, number, method);
+          await interaction.editReply(`✅ Auto-merge enabled on PR #${number} (method: ${method})\n\nPR will merge automatically when all checks pass!`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "check-conflicts") {
+        const number = interaction.options.getInteger("number", true);
+        try {
+          await interaction.deferReply();
+          const conflicts = await github.checkMergeConflicts(githubToken, githubOwner, githubRepo, number);
+          if (conflicts.mergeable) {
+            await interaction.editReply(`✅ PR #${number} has no merge conflicts and is ready to merge!`);
+          } else {
+            await interaction.editReply(`⚠️ PR #${number} has merge conflicts\n**Status:** ${conflicts.mergeableState}\n\nResolve conflicts on GitHub before merging.`);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "protect-branch") {
+        const branch = interaction.options.getString("branch", true);
+        try {
+          await interaction.deferReply();
+          const result = await github.protectBranch(githubToken, githubOwner, githubRepo, branch);
+          await interaction.editReply(`🛡️ Branch **${branch}** is now protected!\n\n✓ Require status checks\n✓ Require pull request reviews (1 approval)\n✓ Dismiss stale reviews\n✓ Enforce for admins`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "code-review-status") {
+        try {
+          await interaction.deferReply();
+          const prs = await github.getCodeReviewStatus(githubToken, githubOwner, githubRepo);
+          if (prs.length === 0) {
+            await interaction.editReply(`✅ No PRs awaiting review!`);
+          } else {
+            const prList = prs.map(pr => `#${pr.number} - ${pr.title} (requested: ${pr.requested_reviewers?.length || 0} reviewers)`).join('\n');
+            await interaction.editReply(`👀 **PRs Awaiting Review:**\n${prList}`);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "team-stats") {
+        try {
+          await interaction.deferReply();
+          const stats = await github.getTeamStats(githubToken, githubOwner, githubRepo);
+          const message = `📊 **Team Stats (${stats.period}):**\n\n✅ PRs Merged: ${stats.prsMerged}\n🐛 Issues Closed: ${stats.issuesClosed}\n📝 Commits: ${stats.commitsThisWeek}`;
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "deployment-status") {
+        try {
+          await interaction.deferReply();
+          const deployment = await github.getDeploymentStatus(githubToken, githubOwner, githubRepo);
+          if (deployment.status === "No deployments found") {
+            await interaction.editReply(`📭 No deployments found`);
+          } else {
+            const message = `🚀 **Latest Deployment:**\n\n**Environment:** ${deployment.latestDeployment.environment}\n**Status:** ${deployment.status}\n**Ref:** ${deployment.latestDeployment.ref}\n**Created by:** ${deployment.latestDeployment.creator}\n**Time:** ${new Date(deployment.latestDeployment.createdAt).toLocaleString()}`;
+            await interaction.editReply(message);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "rollback") {
+        const tag = interaction.options.getString("tag", true);
+        try {
+          await interaction.deferReply();
+          const rollback = await github.createRollback(githubToken, githubOwner, githubRepo, tag);
+          await interaction.editReply(`↩️ Rollback release created!\n\n**Target:** ${tag}\n**New Release:** ${rollback.tag_name}\n**URL:** ${rollback.html_url}`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "github-status") {
+        try {
+          await interaction.deferReply();
+          const status = await github.getGitHubStatus(githubToken);
+          if (status.status === "operational") {
+            await interaction.editReply(`✅ GitHub is operational!\n\n📊 Status Page: ${status.statusPage}`);
+          } else {
+            await interaction.editReply(`⚠️ GitHub status unknown\n\n📊 Check: ${status.statusPage}`);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
         }
       }
 

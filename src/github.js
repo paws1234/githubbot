@@ -390,6 +390,397 @@ function getPushCommand(branchName) {
   return `git push origin ${branchName}`;
 }
 
+// New functions for additional features
+
+async function renameBranch(token, owner, repo, oldName, newName) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get the old branch reference
+    const oldRef = await octokit.git.getRef({
+      ...repoConfig,
+      ref: `heads/${oldName}`
+    });
+
+    // Create new branch
+    await octokit.git.createRef({
+      ...repoConfig,
+      ref: `refs/heads/${newName}`,
+      sha: oldRef.data.object.sha
+    });
+
+    // Delete old branch
+    await octokit.git.deleteRef({
+      ...repoConfig,
+      ref: `heads/${oldName}`
+    });
+
+    return { oldName, newName, success: true };
+  } catch (err) {
+    throw new Error(`Failed to rename branch: ${err.message}`);
+  }
+}
+
+async function compareBranches(token, owner, repo, base, head) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.repos.compareCommits({
+      ...repoConfig,
+      base,
+      head
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to compare branches: ${err.message}`);
+  }
+}
+
+async function syncBranch(token, owner, repo, branchName, baseBranch = "main") {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get base branch ref
+    const baseRef = await octokit.git.getRef({
+      ...repoConfig,
+      ref: `heads/${baseBranch}`
+    });
+
+    // Update branch to point to same SHA as base
+    const res = await octokit.git.updateRef({
+      ...repoConfig,
+      ref: `heads/${branchName}`,
+      sha: baseRef.data.object.sha,
+      force: true
+    });
+
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to sync branch: ${err.message}`);
+  }
+}
+
+async function assignIssue(token, owner, repo, number, assignees = []) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.issues.addAssignees({
+      ...repoConfig,
+      issue_number: number,
+      assignees
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to assign issue: ${err.message}`);
+  }
+}
+
+async function linkIssueToPR(token, owner, repo, prNumber, issueNumber) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Add issue reference to PR body
+    const pr = await octokit.pulls.get({
+      ...repoConfig,
+      pull_number: prNumber
+    });
+
+    const issueLink = `\n\nCloses #${issueNumber}`;
+    const newBody = (pr.data.body || "") + issueLink;
+
+    const res = await octokit.pulls.update({
+      ...repoConfig,
+      pull_number: prNumber,
+      body: newBody
+    });
+
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to link issue to PR: ${err.message}`);
+  }
+}
+
+async function requestChanges(token, owner, repo, prNumber, message = "") {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.pulls.createReview({
+      ...repoConfig,
+      pull_number: prNumber,
+      event: "REQUEST_CHANGES",
+      body: message || "Changes requested"
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to request changes: ${err.message}`);
+  }
+}
+
+async function getPRDiff(token, owner, repo, prNumber) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const files = await octokit.pulls.listFiles({
+      ...repoConfig,
+      pull_number: prNumber,
+      per_page: 50
+    });
+
+    return files.data;
+  } catch (err) {
+    throw new Error(`Failed to get PR diff: ${err.message}`);
+  }
+}
+
+async function autoMergePR(token, owner, repo, prNumber, mergeMethod = "merge") {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Check if PR can be auto-merged
+    const pr = await octokit.pulls.get({
+      ...repoConfig,
+      pull_number: prNumber
+    });
+
+    if (!pr.data.mergeable) {
+      throw new Error("PR has merge conflicts");
+    }
+
+    // Enable auto-merge
+    const res = await octokit.rest.pulls.enableAutoMerge({
+      ...repoConfig,
+      pull_number: prNumber,
+      merge_method: mergeMethod
+    });
+
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to enable auto-merge: ${err.message}`);
+  }
+}
+
+async function checkMergeConflicts(token, owner, repo, prNumber) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const pr = await octokit.pulls.get({
+      ...repoConfig,
+      pull_number: prNumber
+    });
+
+    return {
+      mergeable: pr.data.mergeable,
+      mergeableState: pr.data.mergeable_state,
+      conflictingFiles: !pr.data.mergeable ? "Check GitHub for details" : null
+    };
+  } catch (err) {
+    throw new Error(`Failed to check conflicts: ${err.message}`);
+  }
+}
+
+async function getCodeReviewStatus(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const prs = await octokit.pulls.list({
+      ...repoConfig,
+      state: "open",
+      per_page: 50,
+      sort: "updated",
+      direction: "desc"
+    });
+
+    // Filter PRs awaiting review
+    const awaitingReview = prs.data.filter(pr => {
+      const reviews = pr.requested_reviewers?.length > 0;
+      return reviews;
+    });
+
+    return awaitingReview;
+  } catch (err) {
+    throw new Error(`Failed to get review status: ${err.message}`);
+  }
+}
+
+async function getTeamStats(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get stats from last 7 days
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const prs = await octokit.pulls.list({
+      ...repoConfig,
+      state: "closed",
+      per_page: 100,
+      sort: "updated",
+      direction: "desc"
+    });
+
+    const issues = await octokit.issues.list({
+      ...repoConfig,
+      state: "closed",
+      per_page: 100,
+      sort: "updated",
+      direction: "desc"
+    });
+
+    const commits = await octokit.repos.listCommits({
+      ...repoConfig,
+      since: sevenDaysAgo.toISOString(),
+      per_page: 100
+    });
+
+    return {
+      prsMerged: prs.data.length,
+      issuesClosed: issues.data.length,
+      commitsThisWeek: commits.data.length,
+      period: "Last 7 days"
+    };
+  } catch (err) {
+    throw new Error(`Failed to get team stats: ${err.message}`);
+  }
+}
+
+async function protectBranch(token, owner, repo, branchName, options = {}) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.repos.updateBranchProtection({
+      ...repoConfig,
+      branch: branchName,
+      required_status_checks: {
+        strict: true,
+        contexts: options.contexts || []
+      },
+      required_pull_request_reviews: {
+        dismiss_stale_reviews: true,
+        require_code_owner_reviews: options.requireCodeOwnerReview || false,
+        required_approving_review_count: options.requiredApprovals || 1
+      },
+      enforce_admins: true,
+      restrictions: null
+    });
+
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to protect branch: ${err.message}`);
+  }
+}
+
+async function getDeploymentStatus(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const deployments = await octokit.repos.listDeployments({
+      ...repoConfig,
+      per_page: 10
+    });
+
+    if (!deployments.data.length) {
+      return { status: "No deployments found" };
+    }
+
+    // Get latest deployment status
+    const latest = deployments.data[0];
+    const statuses = await octokit.repos.listDeploymentStatuses({
+      ...repoConfig,
+      deployment_id: latest.id
+    });
+
+    return {
+      latestDeployment: {
+        id: latest.id,
+        environment: latest.environment,
+        ref: latest.ref,
+        creator: latest.creator.login,
+        createdAt: latest.created_at
+      },
+      status: statuses.data[0]?.state || "unknown",
+      description: statuses.data[0]?.description || ""
+    };
+  } catch (err) {
+    throw new Error(`Failed to get deployment status: ${err.message}`);
+  }
+}
+
+async function createRollback(token, owner, repo, targetTag) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get target release
+    const targetRelease = await octokit.repos.getReleaseByTag({
+      ...repoConfig,
+      tag: targetTag
+    });
+
+    // Create a new release pointing to same tag (rollback marker)
+    const res = await octokit.repos.createRelease({
+      ...repoConfig,
+      tag_name: `rollback-${Date.now()}`,
+      target_commitish: targetRelease.data.target_commitish,
+      name: `Rollback to ${targetTag}`,
+      body: `Rolled back to release ${targetTag}\n\nOriginal: ${targetRelease.data.html_url}`,
+      draft: false,
+      prerelease: false
+    });
+
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to create rollback: ${err.message}`);
+  }
+}
+
+async function getGitHubStatus(token) {
+  try {
+    const octokit = getOctokit(token);
+    
+    // Use GitHub's status API (if available) or check basic connectivity
+    const status = await octokit.meta.getStatus();
+    
+    return {
+      status: "operational",
+      statusPage: "https://www.githubstatus.com"
+    };
+  } catch (err) {
+    return {
+      status: "unknown",
+      error: err.message
+    };
+  }
+}
+
+async function unprotectBranch(token, owner, repo, branchName) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    await octokit.repos.deleteBranchProtection({
+      ...repoConfig,
+      branch: branchName
+    });
+
+    return { success: true };
+  } catch (err) {
+    throw new Error(`Failed to unprotect branch: ${err.message}`);
+  }
+}
+
 
 module.exports = {
   createPR,
@@ -415,6 +806,21 @@ module.exports = {
   getCloneCommand,
   getCheckoutCommand,
   getPullCommand,
-  getCommitCommand,
-  getPushCommand
+  getPushCommand,
+  renameBranch,
+  compareBranches,
+  syncBranch,
+  assignIssue,
+  linkIssueToPR,
+  requestChanges,
+  getPRDiff,
+  autoMergePR,
+  checkMergeConflicts,
+  getCodeReviewStatus,
+  getTeamStats,
+  protectBranch,
+  getDeploymentStatus,
+  createRollback,
+  getGitHubStatus,
+  unprotectBranch
 };
