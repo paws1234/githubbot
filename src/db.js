@@ -222,6 +222,56 @@ async function disableSetup(id) {
   }
 }
 
+/**
+ * Update a setup (repository, channel, etc)
+ */
+async function updateSetup(id, updates) {
+  try {
+    const fields = [];
+    const values = [];
+    let paramCount = 1;
+
+    // Build dynamic update query
+    if (updates.githubOwner) {
+      fields.push(`githubOwner = $${paramCount}`);
+      values.push(updates.githubOwner);
+      paramCount++;
+    }
+    if (updates.githubRepo) {
+      fields.push(`githubRepo = $${paramCount}`);
+      values.push(updates.githubRepo);
+      paramCount++;
+    }
+    if (updates.discordChannelId) {
+      fields.push(`discordChannelId = $${paramCount}`);
+      values.push(updates.discordChannelId);
+      paramCount++;
+    }
+
+    if (fields.length === 0) {
+      throw new Error('No fields to update');
+    }
+
+    // Always update updatedAt
+    fields.push(`updatedAt = CURRENT_TIMESTAMP`);
+    values.push(id);
+
+    const query = `UPDATE setups SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+    
+    const result = await pool.query(query, values);
+
+    if (result.rows.length === 0) {
+      throw new Error('Setup not found');
+    }
+
+    const row = result.rows[0];
+    return decryptSetup(row);
+  } catch (err) {
+    console.error('❌ Failed to update setup:', err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   initializeDatabase,
   createSetup,
@@ -229,5 +279,6 @@ module.exports = {
   getSetupById,
   getAllSetups,
   disableSetup,
+  updateSetup,
   pool
 };

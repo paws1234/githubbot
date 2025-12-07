@@ -177,6 +177,50 @@ router.get('/setup/:id', async (req, res) => {
 });
 
 /**
+ * PUT /api/setup/:id
+ * Update setup configuration (repository, channel, etc)
+ */
+router.put('/setup/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { githubOwner, githubRepo, discordChannelId } = req.body;
+
+    const setup = await db.getSetupById(id);
+    if (!setup) {
+      return res.status(404).json({ error: 'Setup not found' });
+    }
+
+    // Update only provided fields
+    const updates = {};
+    if (githubOwner) updates.githubOwner = githubOwner;
+    if (githubRepo) updates.githubRepo = githubRepo;
+    if (discordChannelId) updates.discordChannelId = discordChannelId;
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No fields to update' });
+    }
+
+    // Update in database
+    const updatedSetup = await db.updateSetup(id, updates);
+
+    res.json({
+      success: true,
+      message: 'Setup updated successfully',
+      setup: {
+        id: updatedSetup.id,
+        webhookId: updatedSetup.webhookId,
+        repo: `${updatedSetup.githubOwner}/${updatedSetup.githubRepo}`,
+        discordGuild: updatedSetup.discordGuildId,
+        discordChannel: updatedSetup.discordChannelId
+      }
+    });
+  } catch (error) {
+    console.error('Update setup error:', error);
+    res.status(500).json({ error: 'Failed to update setup' });
+  }
+});
+
+/**
  * Helper to get base URL for webhook
  */
 function getBaseUrl(req) {

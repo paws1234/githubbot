@@ -580,7 +580,21 @@ async function createDiscordBot(setupConfig) {
 
   new SlashCommandBuilder()
     .setName("stale-prs")
-    .setDescription("Find stale PRs stuck for 1+ days and create improvement tasks")
+    .setDescription("Find stale PRs stuck for 1+ days and create improvement tasks"),
+
+  new SlashCommandBuilder()
+    .setName("change-repo")
+    .setDescription("Change the GitHub repository for this channel")
+    .addStringOption(o =>
+      o.setName("owner")
+        .setDescription("GitHub repository owner")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("repository")
+        .setDescription("GitHub repository name")
+        .setRequired(true)
+    )
 
 ].map(c => c.toJSON());
 
@@ -1745,6 +1759,55 @@ Use: \`/merge-pr number:# method:squash\`
           } else {
             await interaction.editReply(`❌ ${err.message}`);
           }
+        }
+      }
+
+      if (interaction.commandName === "change-repo") {
+        try {
+          const owner = interaction.options.getString("owner");
+          const repo = interaction.options.getString("repository");
+
+          // Get the current setup for this channel
+          const setup = client.setupConfig;
+          if (!setup) {
+            return await interaction.reply({
+              content: '❌ Bot not configured for this channel. Run `/git-setup` first.',
+              ephemeral: true
+            });
+          }
+
+          // Update via API
+          const response = await fetch(`http://localhost:${PORT || 3000}/api/setup/${setup.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ githubOwner: owner, githubRepo: repo })
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            return await interaction.reply({
+              content: `❌ Failed to update: ${error.error}`,
+              ephemeral: true
+            });
+          }
+
+          const result = await response.json();
+
+          // Update the client config
+          client.setupConfig.githubOwner = owner;
+          client.setupConfig.githubRepo = repo;
+
+          await interaction.reply({
+            content: `✅ **Repository Updated!**\n\n📦 New Repo: **${owner}/${repo}**\n\nAll future GitHub events will be tracked in this new repository.`,
+            ephemeral: true
+          });
+
+          console.log(`🔄 Repository changed: ${owner}/${repo}`);
+        } catch (err) {
+          await interaction.reply({
+            content: `❌ Error: ${err.message}`,
+            ephemeral: true
+          });
         }
       }
 
