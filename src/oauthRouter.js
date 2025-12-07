@@ -150,33 +150,41 @@ router.get('/channels/:sessionId/:guildId', async (req, res) => {
   try {
     const { sessionId, guildId } = req.params;
     
-    console.log(`📍 Fetching channels for guild: ${guildId}`);
+    console.log(`\n📍 Channel Fetch Request:`);
+    console.log(`   Guild ID: ${guildId}`);
+    console.log(`   Session ID: ${sessionId.substring(0, 10)}...`);
     
     const session = userSessions.get(sessionId);
     if (!session) {
+      console.error(`❌ Session not found for ${sessionId}`);
       return res.status(404).json({ error: 'Session not found' });
     }
 
     // Use bot token from environment to fetch channels
     const botToken = process.env.DISCORD_BOT_TOKEN;
     if (!botToken) {
-      console.error('❌ DISCORD_BOT_TOKEN not configured');
-      return res.status(500).json({ error: 'Bot token not configured' });
+      console.error('❌ DISCORD_BOT_TOKEN environment variable not set!');
+      return res.status(500).json({ error: 'Bot token not configured on server' });
     }
+    
+    console.log(`   Bot Token: ${botToken.substring(0, 10)}...`);
 
     try {
-      // Pass user token as fallback if bot token fails with 403
       const channels = await oauth.getDiscordChannels(guildId, botToken, session.discordToken);
-      console.log(`✅ Found ${channels.length} channels in guild ${guildId}`);
+      console.log(`\n✅ Channel Fetch Success:`);
+      console.log(`   Found ${channels.length} text channels`);
+      if (channels.length > 0) {
+        channels.forEach(ch => console.log(`   - ${ch.name} (${ch.id})`));
+      }
       res.json({ channels });
     } catch (err) {
-      console.error(`❌ Failed to fetch channels for guild ${guildId}:`, err.message);
+      console.error(`\n❌ Channel Fetch Error:`, err.message);
       // Return empty array as fallback so UI doesn't break
       res.json({ channels: [] });
     }
   } catch (err) {
-    console.error('Error in channels endpoint:', err);
-    res.status(500).json({ error: err.message });
+    console.error('Unexpected error in channels endpoint:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
