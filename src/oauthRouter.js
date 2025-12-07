@@ -143,6 +143,33 @@ router.get('/session/:sessionId', (req, res) => {
 });
 
 /**
+ * GET /oauth/channels/:sessionId/:guildId
+ * Get Discord channels for a guild
+ */
+router.get('/channels/:sessionId/:guildId', async (req, res) => {
+  try {
+    const { sessionId, guildId } = req.params;
+    
+    const session = userSessions.get(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Use bot token from environment to fetch channels
+    const botToken = process.env.DISCORD_BOT_TOKEN;
+    if (!botToken) {
+      return res.status(500).json({ error: 'Bot token not configured' });
+    }
+
+    const channels = await oauth.getDiscordChannels(guildId, botToken);
+    res.json({ channels });
+  } catch (err) {
+    console.error('Error fetching channels:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * POST /oauth/complete
  * Complete setup with selected repo and guild/channel
  */
