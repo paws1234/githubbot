@@ -56,9 +56,10 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
         const repoName = payload.repository?.full_name;
         const deleted = payload.deleted === true;
 
-        // For push events, repository is optional in some cases
+        // Skip if no ref - some webhook events don't include this
         if (!ref) {
-          throw new Error("Invalid push payload received from GitHub - missing ref");
+          console.warn(`⚠️ Push event received without ref, skipping. Payload keys: ${Object.keys(payload).join(', ')}`);
+          return;
         }
 
         // If no repo name, try to continue anyway (some webhooks may not include it)
@@ -94,7 +95,8 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
         await channel.send(text);
       } catch (err) {
         console.error("Error handling push event:", err);
-        await channel.send(`⚠️ Error processing push event: ${err.message}`);
+        // Don't send error message to Discord for all push errors, log it instead
+        console.error("Push event details:", { payload });
       }
     }
 
