@@ -53,24 +53,28 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
       try {
         const ref = payload.ref;
         const commits = payload.commits || [];
-        const repoName = payload.repository && payload.repository.full_name;
+        const repoName = payload.repository?.full_name;
         const deleted = payload.deleted === true;
 
-        if (!ref || !repoName) {
-          throw new Error("Invalid push payload received from GitHub");
+        // For push events, repository is optional in some cases
+        if (!ref) {
+          throw new Error("Invalid push payload received from GitHub - missing ref");
         }
+
+        // If no repo name, try to continue anyway (some webhooks may not include it)
+        const displayRepo = repoName || "unknown repo";
 
         // Handle branch deletion
         if (deleted) {
           const branchName = ref.replace('refs/heads/', '');
-          const text = `🗑️ Branch \`${branchName}\` deleted in **${repoName}** by **${payload.pusher?.name || "unknown"}**`;
+          const text = `🗑️ Branch \`${branchName}\` deleted in **${displayRepo}** by **${payload.pusher?.name || "unknown"}**`;
           await channel.send(text);
           return;
         }
 
         // Handle regular push
-        let text = `🚀 Push to \`${ref}\` in **${repoName}** by **${payload.pusher?.name || "unknown"}**`;
-        if (commits.length) {
+        let text = `🚀 Push to \`${ref}\` in **${displayRepo}** by **${payload.pusher?.name || "unknown"}**`;
+        if (commits && commits.length > 0) {
           const lines = commits
             .slice(0, 5)
             .map(c => {
@@ -226,15 +230,18 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
       try {
         const ref = payload.ref;
         const refType = payload.ref_type; // "branch" or "tag"
-        const repoName = payload.repository && payload.repository.full_name;
+        const repoName = payload.repository?.full_name;
         const pusherName = payload.sender?.login || "unknown";
 
-        if (!ref || !refType || !repoName) {
-          throw new Error("Invalid create payload received from GitHub");
+        // Create events should have at least ref and ref_type
+        if (!ref || !refType) {
+          console.warn(`⚠️ Create event missing ref or ref_type: ref=${ref}, refType=${refType}`);
+          return; // Skip if incomplete, don't crash
         }
 
+        const displayRepo = repoName || "unknown repo";
         const emoji = refType === "tag" ? "🏷️" : "🌿";
-        const msg = `${emoji} New ${refType} \`${ref}\` created in **${repoName}** by **${pusherName}**`;
+        const msg = `${emoji} New ${refType} \`${ref}\` created in **${displayRepo}** by **${pusherName}**`;
         await channel.send(msg);
       } catch (err) {
         console.error("Error handling create event:", err);

@@ -688,8 +688,9 @@ client.on("ready", () => {
         const name = interaction.options.getString("name", true);
         const base = interaction.options.getString("base") || "main";
 
+        // Defer IMMEDIATELY before any async operations
+        await interaction.deferReply();
         try {
-          await interaction.deferReply();
           const result = await github.createBranch(githubToken, githubOwner, githubRepo, name, base);
           const branchUrl = `https://github.com/${githubOwner}/${githubRepo}/tree/${name}`;
           await interaction.editReply(`🌿 Branch **${name}** created from **${base}** successfully!\n${branchUrl}`);
@@ -699,11 +700,7 @@ client.on("ready", () => {
           await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           console.error(err);
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: `❌ Failed to create branch: ${err.message}`, ephemeral: true });
-          } else if (interaction.deferred) {
-            await interaction.editReply(`❌ Failed to create branch: ${err.message}`);
-          }
+          await interaction.editReply(`❌ Failed to create branch: ${err.message}`);
         }
       }
 
@@ -728,8 +725,9 @@ client.on("ready", () => {
       }
 
       if (interaction.commandName === "list-branches") {
+        // Defer IMMEDIATELY before any async operations
+        await interaction.deferReply();
         try {
-          await interaction.deferReply();
           const branches = await github.listBranches(githubToken, githubOwner, githubRepo);
           if (branches.length === 0) {
             await interaction.editReply(`🌿 No branches found`);
@@ -738,11 +736,7 @@ client.on("ready", () => {
             await interaction.editReply(`🌿 **Branches** in ${githubOwner}/${githubRepo}:\n\`\`\`\n${branchList}\n\`\`\``);
           }
         } catch (err) {
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
-          } else {
-            await interaction.editReply(`❌ ${err.message}`);
-          }
+          await interaction.editReply(`❌ ${err.message}`);
         }
       }
 
