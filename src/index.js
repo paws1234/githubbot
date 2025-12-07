@@ -313,6 +313,13 @@ app.listen(port, async () => {
   console.log(`🌐 Express server listening on port ${port}`);
   console.log(`📝 Setup endpoint: POST http://localhost:${port}/api/setup`);
   
+  // Initialize database
+  try {
+    await db.initializeDatabase();
+  } catch (error) {
+    console.error('Failed to initialize database:', error);
+  }
+  
   // Initialize existing setups
   await initializeSetups();
 });
