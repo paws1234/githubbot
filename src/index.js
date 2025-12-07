@@ -112,6 +112,46 @@ async function createDiscordBot(setupConfig) {
       .setRequired(false)
   ),
 
+  new SlashCommandBuilder()
+    .setName("list-prs")
+    .setDescription("List open pull requests")
+    .addStringOption(o =>
+      o.setName("state")
+        .setDescription("PR state: open, closed, all")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("list-branches")
+    .setDescription("List repository branches"),
+
+  new SlashCommandBuilder()
+    .setName("create-issue")
+    .setDescription("Create a GitHub issue")
+    .addStringOption(o =>
+      o.setName("title")
+        .setDescription("Issue title")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("body")
+        .setDescription("Issue description")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("pr-info")
+    .setDescription("Get details about a specific PR")
+    .addIntegerOption(o =>
+      o.setName("number")
+        .setDescription("PR number")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("repo-info")
+    .setDescription("Get repository information")
+
 ].map(c => c.toJSON());
 
 async function registerCommands() {
@@ -215,6 +255,93 @@ client.on("ready", () => {
             await interaction.reply({ content: `❌ Failed to create branch: ${err.message}`, ephemeral: true });
           } else if (interaction.deferred) {
             await interaction.editReply(`❌ Failed to create branch: ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "list-prs") {
+        const state = interaction.options.getString("state") || "open";
+        try {
+          await interaction.deferReply();
+          const prs = await github.listPRs(githubToken, githubOwner, githubRepo, state);
+          if (prs.length === 0) {
+            await interaction.editReply(`📭 No ${state} PRs found`);
+          } else {
+            const prList = prs.map(pr => `#${pr.number} - ${pr.title} (${pr.state})`).join('\n');
+            await interaction.editReply(`📋 **${state.toUpperCase()} PRs** in ${githubOwner}/${githubRepo}:\n\`\`\`\n${prList}\n\`\`\``);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "list-branches") {
+        try {
+          await interaction.deferReply();
+          const branches = await github.listBranches(githubToken, githubOwner, githubRepo);
+          if (branches.length === 0) {
+            await interaction.editReply(`🌿 No branches found`);
+          } else {
+            const branchList = branches.map(b => b.name).join('\n');
+            await interaction.editReply(`🌿 **Branches** in ${githubOwner}/${githubRepo}:\n\`\`\`\n${branchList}\n\`\`\``);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "create-issue") {
+        const title = interaction.options.getString("title", true);
+        const body = interaction.options.getString("body") || "";
+        try {
+          await interaction.deferReply();
+          const issue = await github.createIssue(githubToken, githubOwner, githubRepo, title, body);
+          const issueUrl = `https://github.com/${githubOwner}/${githubRepo}/issues/${issue.number}`;
+          await interaction.editReply(`🐛 Issue #${issue.number} created: ${title}\n${issueUrl}`);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "pr-info") {
+        const number = interaction.options.getInteger("number", true);
+        try {
+          await interaction.deferReply();
+          const pr = await github.getPRInfo(githubToken, githubOwner, githubRepo, number);
+          const info = `**#${pr.number}** - ${pr.title}\n**State:** ${pr.state}\n**Author:** ${pr.user.login}\n**Created:** ${new Date(pr.created_at).toDateString()}\n**URL:** ${pr.html_url}`;
+          await interaction.editReply(info);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "repo-info") {
+        try {
+          await interaction.deferReply();
+          const repo = await github.getRepoInfo(githubToken, githubOwner, githubRepo);
+          const info = `**${repo.full_name}**\n**Stars:** ⭐ ${repo.stargazers_count}\n**Forks:** 🍴 ${repo.forks_count}\n**Language:** ${repo.language || "N/A"}\n**URL:** ${repo.html_url}`;
+          await interaction.editReply(info);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
           }
         }
       }

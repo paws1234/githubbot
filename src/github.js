@@ -114,6 +114,85 @@ async function createBranch(token, owner, repo, branchName, baseBranch = "main")
   return newRef.data;
 }
 
+async function listPRs(token, owner, repo, state = "open") {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.pulls.list({
+      ...repoConfig,
+      state,
+      per_page: 10,
+      sort: "updated",
+      direction: "desc"
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to list PRs: ${err.message}`);
+  }
+}
+
+async function listBranches(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.repos.listBranches({
+      ...repoConfig,
+      per_page: 20
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to list branches: ${err.message}`);
+  }
+}
+
+async function createIssue(token, owner, repo, title, body = "", labels = []) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.issues.create({
+      ...repoConfig,
+      title,
+      body,
+      labels
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to create issue: ${err.message}`);
+  }
+}
+
+async function getPRInfo(token, owner, repo, number) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.pulls.get({
+      ...repoConfig,
+      pull_number: number
+    });
+    return res.data;
+  } catch (err) {
+    if (err.status === 404) {
+      throw new Error(`PR #${number} not found`);
+    }
+    throw new Error(`Failed to get PR info: ${err.message}`);
+  }
+}
+
+async function getRepoInfo(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.repos.get(repoConfig);
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to get repo info: ${err.message}`);
+  }
+}
 
 
 module.exports = {
@@ -121,6 +200,10 @@ module.exports = {
   approvePR,
   commentPR,
   mergePR,
-  createBranch
-
+  createBranch,
+  listPRs,
+  listBranches,
+  createIssue,
+  getPRInfo,
+  getRepoInfo
 };
