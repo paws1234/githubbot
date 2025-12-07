@@ -980,6 +980,241 @@ async function getAuditLogs(token, owner, repo, userId = null, daysBack = 7) {
   }
 }
 
+async function triggerCI(token, owner, repo, branch) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get workflow runs for the branch
+    const workflows = await octokit.actions.listRepoWorkflows({
+      ...repoConfig
+    });
+
+    if (!workflows.data.workflows || workflows.data.workflows.length === 0) {
+      throw new Error('No GitHub Actions workflows found in this repository');
+    }
+
+    // Trigger the first workflow (usually main CI pipeline)
+    const workflow = workflows.data.workflows[0];
+    
+    const result = await octokit.actions.createWorkflowDispatch({
+      ...repoConfig,
+      workflow_id: workflow.id,
+      ref: branch,
+      inputs: {}
+    });
+
+    return {
+      success: true,
+      workflowName: workflow.name,
+      branch: branch,
+      message: `CI pipeline triggered successfully on branch \`${branch}\``
+    };
+  } catch (err) {
+    throw new Error(`Failed to trigger CI: ${err.message}`);
+  }
+}
+
+async function getCILogs(token, owner, repo, runId) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get workflow run details
+    const run = await octokit.actions.getWorkflowRun({
+      ...repoConfig,
+      run_id: parseInt(runId)
+    });
+
+    // Get jobs for this run
+    const jobs = await octokit.actions.listJobsForWorkflowRun({
+      ...repoConfig,
+      run_id: parseInt(runId),
+      per_page: 50
+    });
+
+    // Get logs for each job
+    let allLogs = [];
+    for (const job of jobs.data.jobs) {
+      try {
+        const logsUrl = job.logs_url;
+        // Note: logs_url requires making a raw HTTP request
+        // For now, we'll provide job information and status
+        allLogs.push({
+          jobName: job.name,
+          status: job.status,
+          conclusion: job.conclusion,
+          startedAt: job.started_at,
+          completedAt: job.completed_at,
+          runnerName: job.runner_name,
+          url: job.url
+        });
+      } catch (e) {
+        // Log retrieval may fail, continue with job info
+      }
+    }
+
+    return {
+      runId: run.data.id,
+      workflowName: run.data.name,
+      status: run.data.status,
+      conclusion: run.data.conclusion,
+      branch: run.data.head_branch,
+      createdAt: run.data.created_at,
+      updatedAt: run.data.updated_at,
+      jobs: allLogs,
+      htmlUrl: run.data.html_url
+    };
+  } catch (err) {
+    throw new Error(`Failed to get CI logs: ${err.message}`);
+  }
+}
+
+async function viewEnvironmentConfig(token, owner, repo, branch) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Try to get .env file content (sanitized)
+    const envFile = await octokit.repos.getContent({
+      ...repoConfig,
+      path: '.env',
+      ref: branch
+    }).catch(() => null);
+
+    // Try to get .env.example file
+    const envExampleFile = await octokit.repos.getContent({
+      ...repoConfig,
+      path: '.env.example',
+      ref: branch
+    }).catch(() => null);
+
+    // Try to get other config files
+    const configFiles = ['.config.js', 'config.json', 'config.yaml', 'config.yml'];
+    const configs = [];
+
+    for (const configFile of configFiles) {
+      try {
+        const file = await octokit.repos.getContent({
+          ...repoConfig,
+          path: configFile,
+          ref: branch
+        }).catch(() => null);
+        if (file) configs.push(file.data);
+      } catch (e) {
+        // File doesn't exist, continue
+      }
+    }
+
+    // Sanitize environment variables (hide values, show keys only)
+    let sanitizedEnv = '';
+    if (envFile && envFile.data) {
+      const content = Buffer.from(envFile.data.content, 'base64').toString();
+      const lines = content.split('\n');
+      sanitizedEnv = lines
+        .map(line => {
+          if (line.includes('=')) {
+            const [key] = line.split('=');
+            return `${key}=[REDACTED]`;
+          }
+          return line;
+        })
+        .join('\n');
+    }
+
+    // Use .env.example if available
+    let exampleContent = '';
+    if (envExampleFile && envExampleFile.data) {
+      exampleContent = Buffer.from(envExampleFile.data.content, 'base64').toString();
+    }
+
+    return {
+      branch: branch,
+      repo: `${owner}/${repo}`,
+      envFileExists: !!envFile,
+      envExampleExists: !!envExampleFile,
+      sanitizedEnv: sanitizedEnv || 'No .env file found',
+      envExampleContent: exampleContent || 'No .env.example file found',
+      configFilesFound: configs.length,
+      note: '⚠️ All sensitive values are redacted for security'
+    };
+  } catch (err) {
+    throw new Error(`Failed to view environment config: ${err.message}`);
+  }
+}
+
+async function bumpVersion(token, owner, repo, bumpType) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get latest release to determine current version
+    let currentVersion = '0.0.0';
+    try {
+      const latestRelease = await octokit.repos.getLatestRelease(repoConfig);
+      currentVersion = latestRelease.data.tag_name.replace(/^v/, '');
+    } catch (e) {
+      // No releases yet, start at 0.0.0
+    }
+
+    // Parse version
+    const [major, minor, patch] = currentVersion.split('.').map(Number);
+
+    // Calculate new version
+    let newVersion;
+    switch (bumpType.toLowerCase()) {
+      case 'major':
+        newVersion = `${major + 1}.0.0`;
+        break;
+      case 'minor':
+        newVersion = `${major}.${minor + 1}.0`;
+        break;
+      case 'patch':
+        newVersion = `${major}.${minor}.${patch + 1}`;
+        break;
+      default:
+        throw new Error('Invalid bump type. Use: patch, minor, or major');
+    }
+
+    // Get current main branch HEAD
+    const mainRef = await octokit.git.getRef({
+      ...repoConfig,
+      ref: 'heads/main'
+    });
+
+    const sha = mainRef.data.object.sha;
+
+    // Create an annotated tag for the new version
+    const tag = await octokit.git.createTag({
+      ...repoConfig,
+      tag: `v${newVersion}`,
+      message: `Release version ${newVersion}`,
+      object: sha,
+      type: 'commit'
+    });
+
+    // Create release for the tag
+    const release = await octokit.repos.createRelease({
+      ...repoConfig,
+      tag_name: `v${newVersion}`,
+      name: `Version ${newVersion}`,
+      body: `**${bumpType.charAt(0).toUpperCase() + bumpType.slice(1)} Version Bump**\n\nFrom: v${currentVersion}\nTo: v${newVersion}`,
+      draft: false,
+      prerelease: false
+    });
+
+    return {
+      previousVersion: `v${currentVersion}`,
+      newVersion: `v${newVersion}`,
+      bumpType: bumpType,
+      releaseUrl: release.data.html_url,
+      status: 'Version bumped and released successfully'
+    };
+  } catch (err) {
+    throw new Error(`Failed to bump version: ${err.message}`);
+  }
+}
+
 
 module.exports = {
   createPR,
@@ -1024,5 +1259,9 @@ module.exports = {
   unprotectBranch,
   scanPRForSecrets,
   checkDependencyVulnerabilities,
-  getAuditLogs
+  getAuditLogs,
+  triggerCI,
+  getCILogs,
+  viewEnvironmentConfig,
+  bumpVersion
 };

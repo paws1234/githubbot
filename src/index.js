@@ -463,6 +463,48 @@ async function createDiscordBot(setupConfig) {
       o.setName("days")
         .setDescription("Date range in days (default: 7, max: 365)")
         .setRequired(false)
+    ),
+
+  // DevOps & CI/CD COMMANDS
+  new SlashCommandBuilder()
+    .setName("run-ci")
+    .setDescription("Trigger CI/CD pipeline on a branch")
+    .addStringOption(o =>
+      o.setName("branch")
+        .setDescription("Branch name to run CI on")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("ci-logs")
+    .setDescription("Fetch GitHub Actions logs for a workflow run")
+    .addStringOption(o =>
+      o.setName("run_id")
+        .setDescription("Workflow run ID")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("view-env")
+    .setDescription("View sanitized environment config from a branch")
+    .addStringOption(o =>
+      o.setName("branch")
+        .setDescription("Branch name (default: main)")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("bump-version")
+    .setDescription("Auto version bump with commit, tag, and release")
+    .addStringOption(o =>
+      o.setName("type")
+        .setDescription("Bump type: patch, minor, or major")
+        .setRequired(true)
+        .addChoices(
+          { name: 'Patch (0.0.X)', value: 'patch' },
+          { name: 'Minor (0.X.0)', value: 'minor' },
+          { name: 'Major (X.0.0)', value: 'major' }
+        )
     )
 
 ].map(c => c.toJSON());
@@ -1284,6 +1326,108 @@ Use: \`/merge-pr number:# method:squash\`
             
             await interaction.editReply(message);
           }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      // DevOps & CI/CD COMMAND HANDLERS
+
+      if (interaction.commandName === "run-ci") {
+        const branch = interaction.options.getString("branch", true);
+        try {
+          await interaction.deferReply();
+          const result = await github.triggerCI(githubToken, githubOwner, githubRepo, branch);
+          await interaction.editReply(`✅ ${result.message}\n\n**Workflow:** ${result.workflowName}\n**Branch:** \`${result.branch}\``);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "ci-logs") {
+        const runId = interaction.options.getString("run_id", true);
+        try {
+          await interaction.deferReply();
+          const logs = await github.getCILogs(githubToken, githubOwner, githubRepo, runId);
+          
+          let message = `🔧 **CI/CD Workflow Logs** - Run #${logs.runId}\n\n`;
+          message += `**Workflow:** ${logs.workflowName}\n`;
+          message += `**Status:** ${logs.status}\n`;
+          message += `**Conclusion:** ${logs.conclusion || 'In Progress'}\n`;
+          message += `**Branch:** \`${logs.branch}\`\n`;
+          message += `**Created:** ${new Date(logs.createdAt).toLocaleString()}\n\n`;
+          
+          message += `**Jobs:**\n`;
+          logs.jobs.forEach(job => {
+            const statusEmoji = job.status === 'completed' ? '✅' : job.status === 'in_progress' ? '⏳' : '⏹️';
+            const conclusionEmoji = job.conclusion === 'success' ? '✅' : job.conclusion === 'failure' ? '❌' : job.conclusion === 'skipped' ? '⏭️' : '❓';
+            message += `${statusEmoji} **${job.jobName}** - ${job.conclusion ? conclusionEmoji : 'Running'}\n`;
+          });
+          
+          message += `\n📖 [View Full Logs](${logs.htmlUrl})`;
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "view-env") {
+        const branch = interaction.options.getString("branch") || "main";
+        try {
+          await interaction.deferReply();
+          const config = await github.viewEnvironmentConfig(githubToken, githubOwner, githubRepo, branch);
+          
+          let message = `⚙️ **Environment Configuration** - ${config.repo}\n`;
+          message += `**Branch:** \`${config.branch}\`\n\n`;
+          
+          message += `📄 **.env File Status:**\n`;
+          message += config.envFileExists ? '✅ Found\n' : '❌ Not found\n';
+          
+          if (config.envFileExists) {
+            message += `\`\`\`\n${config.sanitizedEnv}\n\`\`\`\n\n`;
+          }
+          
+          if (config.envExampleContent && config.envExampleContent !== 'No .env.example file found') {
+            message += `📋 **.env.example:**\n\`\`\`\n${config.envExampleContent.substring(0, 500)}\n\`\`\`\n`;
+          }
+          
+          message += `\n${config.note}`;
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "bump-version") {
+        const type = interaction.options.getString("type", true);
+        try {
+          await interaction.deferReply();
+          const result = await github.bumpVersion(githubToken, githubOwner, githubRepo, type);
+          
+          let message = `📦 **Version Bumped Successfully!**\n\n`;
+          message += `**Previous:** ${result.previousVersion}\n`;
+          message += `**New:** ${result.newVersion}\n`;
+          message += `**Type:** ${result.bumpType.toUpperCase()}\n\n`;
+          message += `✅ ${result.status}\n`;
+          message += `📖 [View Release](${result.releaseUrl})`;
+          
+          await interaction.editReply(message);
         } catch (err) {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
