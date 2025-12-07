@@ -1876,14 +1876,40 @@ app.post("/webhook/:webhookId", async (req, res) => {
       }
     }
 
+    // ✅ Verify the webhook event is from the correct repository
+    const repoName = payload.repository?.full_name;
+    const expectedRepo = `${setup.githubOwner}/${setup.githubRepo}`;
+    if (repoName && repoName !== expectedRepo) {
+      console.warn(`⚠️ Webhook from wrong repo: ${repoName} (expected ${expectedRepo})`);
+      return res.status(400).json({ error: "Repository mismatch", received: repoName, expected: expectedRepo });
+    }
+
     console.log(`📨 Webhook (${setup.githubOwner}/${setup.githubRepo}): ${eventName}`);
 
-    // Get or create Discord client for this setup
+    // Get or create Discord client for this setup with timeout and error handling
     let client = activeClients.get(setup.id);
     if (!client || !client.isReady()) {
-      console.log(`🔄 Creating new Discord client for setup ${setup.id}`);
-      client = await createDiscordBot(setup);
-      activeClients.set(setup.id, client);
+      try {
+        console.log(`🔄 Creating new Discord client for setup ${setup.id}`);
+        
+        // Create client with 10 second timeout
+        client = await Promise.race([
+          createDiscordBot(setup),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Discord client creation timeout (10s)')), 10000)
+          )
+        ]);
+        
+        activeClients.set(setup.id, client);
+        console.log(`✅ Discord client ready for setup ${setup.id}`);
+      } catch (err) {
+        console.error(`❌ Failed to create Discord client for setup ${setup.id}:`, err.message);
+        return res.status(503).json({ 
+          error: 'Discord service unavailable', 
+          message: err.message,
+          retry: true 
+        });
+      }
     }
 
     await workflows.handleGithubEvent(eventName, payload, client, setup);

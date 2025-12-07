@@ -13,6 +13,14 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
     }
 
     const channel = await discordClient.channels.fetch(channelId).catch((err) => {
+      // Provide specific error messages based on error type
+      if (err.code === 'ChannelNotFound' || err.status === 404) {
+        throw new Error(`Discord channel ${channelId} was deleted or is invalid`);
+      } else if (err.status === 403) {
+        throw new Error(`Bot doesn't have permission to access channel ${channelId}`);
+      } else if (err.code === 'UnknownChannel') {
+        throw new Error(`Channel ${channelId} not found - it may have been deleted`);
+      }
       throw new Error(`Could not fetch Discord channel ${channelId}: ${err.message}`);
     });
     if (!channel) {
@@ -28,7 +36,12 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
           throw new Error("Invalid PR payload received from GitHub");
         }
 
-        const msg = `📣 PR #${pr.number} **${pr.title}** (${action}) by **${pr.user?.login || "unknown"}**\n${pr.html_url}`;
+        // Sanitize PR title to prevent Discord markdown abuse
+        const sanitizedTitle = (pr.title || "Untitled").substring(0, 200);
+        const userLogin = pr.user?.login || "unknown";
+        const prUrl = pr.html_url || "#";
+
+        const msg = `📣 PR #${pr.number} **${sanitizedTitle}** (${action}) by **${userLogin}**\n${prUrl}`;
         await channel.send(msg);
       } catch (err) {
         console.error("Error handling pull_request event:", err);
@@ -58,9 +71,22 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
         // Handle regular push
         let text = `🚀 Push to \`${ref}\` in **${repoName}** by **${payload.pusher?.name || "unknown"}**`;
         if (commits.length) {
-          const lines = commits.slice(0, 5).map(c => `- ${c.message} (${c.id.substring(0, 7)})`);
+          const lines = commits
+            .slice(0, 5)
+            .map(c => {
+              const message = (c?.message || "No message").substring(0, 100);
+              const commitId = c?.id?.substring(0, 7) || "unknown";
+              return `- ${message} (${commitId})`;
+            })
+            .filter(line => line && line.length < 100);
           text += "\n" + lines.join("\n");
         }
+        
+        // Ensure message doesn't exceed Discord limit
+        if (text.length > 2000) {
+          text = text.substring(0, 1997) + "...";
+        }
+        
         await channel.send(text);
       } catch (err) {
         console.error("Error handling push event:", err);
