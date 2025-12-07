@@ -2,9 +2,9 @@ name: CI/CD Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ '**' ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ '**' ]
 
 jobs:
   test:
@@ -51,7 +51,7 @@ jobs:
       - name: Setup test environment
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/github_discord_test
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY || '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef' }}
+          ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
           DISCORD_TOKEN: test_token_123456789
           GITHUB_CLIENT_ID: test_github_id
           GITHUB_CLIENT_SECRET: test_github_secret
@@ -59,7 +59,8 @@ jobs:
           GITLAB_CLIENT_SECRET: test_gitlab_secret
           APP_BASE_URL: http://localhost:3000
         run: |
-          echo "Environment variables set for testing"
+          echo "✅ Test environment variables configured"
+          echo "ENCRYPTION_KEY length: ${#ENCRYPTION_KEY}"
 
       - name: Run syntax validation tests
         env:
