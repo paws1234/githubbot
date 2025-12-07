@@ -494,14 +494,15 @@
         
         const response = await fetch(`/oauth/channels/${currentSession}/${guildId}`);
         if (!response.ok) {
-          throw new Error('Failed to fetch channels');
+          throw new Error('Failed to fetch channels - Status: ' + response.status);
         }
         
         const data = await response.json();
-        const channels = data.channels;
+        const channels = data.channels || [];
         
-        if (channels.length === 0) {
-          channelSelect.innerHTML = '<option value="">No text channels found</option>';
+        if (!channels || channels.length === 0) {
+          channelSelect.innerHTML = '<option value="">No text channels found - Using General by default</option>';
+          console.warn('⚠️ No channels returned from API');
           return;
         }
         
@@ -514,7 +515,8 @@
         });
       } catch (err) {
         console.error('Error fetching channels:', err);
-        channelSelect.innerHTML = '<option value="">Error loading channels</option>';
+        channelSelect.innerHTML = '<option value="">⚠️ Error loading channels - Select manually</option>';
+        // Allow user to proceed anyway
       }
     }
 

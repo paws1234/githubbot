@@ -169,8 +169,9 @@ async function getDiscordGuilds(accessToken) {
 /**
  * Get Discord guild channels
  */
-async function getDiscordChannels(guildId, botToken) {
+async function getDiscordChannels(guildId, botToken, userToken = null) {
   try {
+    // Try with bot token first
     const response = await axios.get(
       `https://discord.com/api/v10/guilds/${guildId}/channels`,
       {
@@ -178,8 +179,23 @@ async function getDiscordChannels(guildId, botToken) {
       }
     );
     return response.data.filter(ch => ch.type === 0); // Only text channels
-  } catch (err) {
-    throw new Error(`Failed to fetch Discord channels: ${err.message}`);
+  } catch (botErr) {
+    // If bot token fails and user token available, try user token
+    if (userToken && botErr.response?.status === 403) {
+      try {
+        console.warn('⚠️ Bot token failed (403), trying user token as fallback...');
+        const response = await axios.get(
+          `https://discord.com/api/v10/users/@me/guilds/${guildId}/channels`,
+          {
+            headers: { Authorization: `Bearer ${userToken}` }
+          }
+        );
+        return response.data.filter(ch => ch.type === 0);
+      } catch (userErr) {
+        throw new Error(`Failed to fetch channels with both bot and user tokens: ${userErr.message}`);
+      }
+    }
+    throw new Error(`Failed to fetch Discord channels: ${botErr.message}`);
   }
 }
 

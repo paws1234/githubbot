@@ -150,6 +150,8 @@ router.get('/channels/:sessionId/:guildId', async (req, res) => {
   try {
     const { sessionId, guildId } = req.params;
     
+    console.log(`📍 Fetching channels for guild: ${guildId}`);
+    
     const session = userSessions.get(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
@@ -158,13 +160,22 @@ router.get('/channels/:sessionId/:guildId', async (req, res) => {
     // Use bot token from environment to fetch channels
     const botToken = process.env.DISCORD_BOT_TOKEN;
     if (!botToken) {
+      console.error('❌ DISCORD_BOT_TOKEN not configured');
       return res.status(500).json({ error: 'Bot token not configured' });
     }
 
-    const channels = await oauth.getDiscordChannels(guildId, botToken);
-    res.json({ channels });
+    try {
+      // Pass user token as fallback if bot token fails with 403
+      const channels = await oauth.getDiscordChannels(guildId, botToken, session.discordToken);
+      console.log(`✅ Found ${channels.length} channels in guild ${guildId}`);
+      res.json({ channels });
+    } catch (err) {
+      console.error(`❌ Failed to fetch channels for guild ${guildId}:`, err.message);
+      // Return empty array as fallback so UI doesn't break
+      res.json({ channels: [] });
+    }
   } catch (err) {
-    console.error('Error fetching channels:', err);
+    console.error('Error in channels endpoint:', err);
     res.status(500).json({ error: err.message });
   }
 });
