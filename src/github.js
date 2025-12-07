@@ -1215,6 +1215,154 @@ async function bumpVersion(token, owner, repo, bumpType) {
   }
 }
 
+async function createTaskIssue(token, owner, repo, taskTitle, taskDescription = '', taskItems = []) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Create task checklist format
+    let body = taskDescription || '';
+    if (taskItems && taskItems.length > 0) {
+      body += '\n\n## Tasks:\n';
+      taskItems.forEach((item, index) => {
+        body += `- [ ] ${item}\n`;
+      });
+    }
+
+    body += '\n\n_Created via Discord Task Mode_';
+
+    const issue = await octokit.issues.create({
+      ...repoConfig,
+      title: taskTitle,
+      body: body,
+      labels: ['task', 'from-discord']
+    });
+
+    return {
+      issueNumber: issue.data.number,
+      issueTitle: issue.data.title,
+      issueUrl: issue.data.html_url,
+      taskCount: taskItems.length,
+      status: 'Task created and synced to GitHub'
+    };
+  } catch (err) {
+    throw new Error(`Failed to create task: ${err.message}`);
+  }
+}
+
+async function updateTaskProgress(token, owner, repo, issueNumber, completedTasks, totalTasks) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get current issue
+    const issue = await octokit.issues.get({
+      ...repoConfig,
+      issue_number: issueNumber
+    });
+
+    // Calculate progress percentage
+    const progressPercent = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+    // Update body with progress
+    let newBody = issue.data.body || '';
+    
+    // Add or update progress header
+    if (newBody.includes('## Progress:')) {
+      newBody = newBody.replace(
+        /## Progress:[\s\S]*?(?=## Tasks:|$)/,
+        `## Progress:\n\`${progressPercent}%\` (${completedTasks}/${totalTasks} tasks completed)\n\n`
+      );
+    } else {
+      newBody = `## Progress:\n\`${progressPercent}%\` (${completedTasks}/${totalTasks} tasks completed)\n\n${newBody}`;
+    }
+
+    const updated = await octokit.issues.update({
+      ...repoConfig,
+      issue_number: issueNumber,
+      body: newBody
+    });
+
+    return {
+      issueNumber: issueNumber,
+      progressPercent: progressPercent,
+      completedTasks: completedTasks,
+      totalTasks: totalTasks,
+      updated: true
+    };
+  } catch (err) {
+    throw new Error(`Failed to update task progress: ${err.message}`);
+  }
+}
+
+async function getTaskList(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get all issues with 'task' label
+    const tasks = await octokit.issues.listForRepo({
+      ...repoConfig,
+      state: 'all',
+      labels: 'task',
+      per_page: 50
+    });
+
+    const taskList = (tasks.data || []).map(task => {
+      // Count completed checkboxes in body
+      const bodyText = task.body || '';
+      const totalCheckboxes = (bodyText.match(/- \[ \]/g) || []).length + (bodyText.match(/- \[x\]/gi) || []).length;
+      const completedCheckboxes = (bodyText.match(/- \[x\]/gi) || []).length;
+
+      return {
+        issueNumber: task.number,
+        title: task.title,
+        state: task.state,
+        createdAt: task.created_at,
+        updatedAt: task.updated_at,
+        url: task.html_url,
+        author: task.user.login,
+        totalTasks: totalCheckboxes,
+        completedTasks: completedCheckboxes,
+        progressPercent: totalCheckboxes > 0 ? Math.round((completedCheckboxes / totalCheckboxes) * 100) : 0
+      };
+    });
+
+    return {
+      repo: `${owner}/${repo}`,
+      totalTasks: taskList.length,
+      openTasks: taskList.filter(t => t.state === 'open').length,
+      closedTasks: taskList.filter(t => t.state === 'closed').length,
+      tasks: taskList.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    };
+  } catch (err) {
+    throw new Error(`Failed to get task list: ${err.message}`);
+  }
+}
+
+async function closeTask(token, owner, repo, issueNumber) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const issue = await octokit.issues.update({
+      ...repoConfig,
+      issue_number: issueNumber,
+      state: 'closed'
+    });
+
+    return {
+      issueNumber: issueNumber,
+      title: issue.data.title,
+      state: 'closed',
+      closedAt: issue.data.closed_at,
+      url: issue.data.html_url
+    };
+  } catch (err) {
+    throw new Error(`Failed to close task: ${err.message}`);
+  }
+}
+
 
 module.exports = {
   createPR,
@@ -1263,5 +1411,9 @@ module.exports = {
   triggerCI,
   getCILogs,
   viewEnvironmentConfig,
-  bumpVersion
+  bumpVersion,
+  createTaskIssue,
+  updateTaskProgress,
+  getTaskList,
+  closeTask
 };

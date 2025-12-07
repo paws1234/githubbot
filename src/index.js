@@ -505,6 +505,58 @@ async function createDiscordBot(setupConfig) {
           { name: 'Minor (0.X.0)', value: 'minor' },
           { name: 'Major (X.0.0)', value: 'major' }
         )
+    ),
+
+  // TASK MODE COMMANDS
+  new SlashCommandBuilder()
+    .setName("create-task")
+    .setDescription("Create a task list and sync to GitHub issues")
+    .addStringOption(o =>
+      o.setName("title")
+        .setDescription("Task title")
+        .setRequired(true)
+    )
+    .addStringOption(o =>
+      o.setName("description")
+        .setDescription("Task description (optional)")
+        .setRequired(false)
+    )
+    .addStringOption(o =>
+      o.setName("items")
+        .setDescription("Task items (comma-separated: item1, item2, item3)")
+        .setRequired(false)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("task-list")
+    .setDescription("View all synced tasks from GitHub"),
+
+  new SlashCommandBuilder()
+    .setName("task-progress")
+    .setDescription("Update task progress")
+    .addIntegerOption(o =>
+      o.setName("issue_number")
+        .setDescription("Issue number of the task")
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("completed")
+        .setDescription("Number of completed tasks")
+        .setRequired(true)
+    )
+    .addIntegerOption(o =>
+      o.setName("total")
+        .setDescription("Total number of tasks")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("close-task")
+    .setDescription("Close a task")
+    .addIntegerOption(o =>
+      o.setName("issue_number")
+        .setDescription("Issue number of the task")
+        .setRequired(true)
     )
 
 ].map(c => c.toJSON());
@@ -1426,6 +1478,117 @@ Use: \`/merge-pr number:# method:squash\`
           message += `**Type:** ${result.bumpType.toUpperCase()}\n\n`;
           message += `✅ ${result.status}\n`;
           message += `📖 [View Release](${result.releaseUrl})`;
+          
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      // TASK MODE HANDLERS
+
+      if (interaction.commandName === "create-task") {
+        const title = interaction.options.getString("title", true);
+        const description = interaction.options.getString("description") || "";
+        const itemsStr = interaction.options.getString("items") || "";
+        const items = itemsStr ? itemsStr.split(",").map(item => item.trim()).filter(item => item) : [];
+
+        try {
+          await interaction.deferReply();
+          const result = await github.createTaskIssue(githubToken, githubOwner, githubRepo, title, description, items);
+          
+          let message = `✅ **Task Created & Synced to GitHub!**\n\n`;
+          message += `**Title:** ${result.issueTitle}\n`;
+          message += `**Issue:** #${result.issueNumber}\n`;
+          message += `**Tasks:** ${result.taskCount} items\n\n`;
+          message += `🔗 [View on GitHub](${result.issueUrl})`;
+          
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "task-list") {
+        try {
+          await interaction.deferReply();
+          const result = await github.getTaskList(githubToken, githubOwner, githubRepo);
+          
+          if (result.tasks.length === 0) {
+            await interaction.editReply(`📭 No tasks found in ${result.repo}`);
+          } else {
+            let message = `📋 **Task Dashboard** - ${result.repo}\n\n`;
+            message += `**Open:** ${result.openTasks} | **Closed:** ${result.closedTasks}\n\n`;
+            
+            // Show first 15 tasks
+            result.tasks.slice(0, 15).forEach(task => {
+              const statusEmoji = task.state === 'open' ? '🟢' : '🔴';
+              const progressBar = `[${'█'.repeat(Math.round(task.progressPercent / 10))}${' '.repeat(10 - Math.round(task.progressPercent / 10))}]`;
+              message += `${statusEmoji} **#${task.issueNumber}** - ${task.title}\n`;
+              message += `   ${progressBar} ${task.progressPercent}% (${task.completedTasks}/${task.totalTasks})\n`;
+              message += `   by ${task.author} · ${new Date(task.updatedAt).toLocaleDateString()}\n\n`;
+            });
+            
+            if (result.tasks.length > 15) {
+              message += `... and ${result.tasks.length - 15} more tasks`;
+            }
+            
+            await interaction.editReply(message);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "task-progress") {
+        const issueNumber = interaction.options.getInteger("issue_number", true);
+        const completed = interaction.options.getInteger("completed", true);
+        const total = interaction.options.getInteger("total", true);
+
+        try {
+          await interaction.deferReply();
+          const result = await github.updateTaskProgress(githubToken, githubOwner, githubRepo, issueNumber, completed, total);
+          
+          const progressBar = `[${'█'.repeat(Math.round(result.progressPercent / 10))}${' '.repeat(10 - Math.round(result.progressPercent / 10))}]`;
+          let message = `📊 **Task Progress Updated!**\n\n`;
+          message += `**Issue:** #${result.issueNumber}\n`;
+          message += `${progressBar} ${result.progressPercent}%\n`;
+          message += `**Progress:** ${result.completedTasks}/${result.totalTasks} tasks completed`;
+          
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "close-task") {
+        const issueNumber = interaction.options.getInteger("issue_number", true);
+
+        try {
+          await interaction.deferReply();
+          const result = await github.closeTask(githubToken, githubOwner, githubRepo, issueNumber);
+          
+          let message = `✅ **Task Completed & Closed!**\n\n`;
+          message += `**Issue:** #${result.issueNumber}\n`;
+          message += `**Title:** ${result.title}\n`;
+          message += `**Status:** ${result.state.toUpperCase()}\n\n`;
+          message += `🔗 [View on GitHub](${result.url})`;
           
           await interaction.editReply(message);
         } catch (err) {
