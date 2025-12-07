@@ -4,9 +4,9 @@
  * Given a GitHub event + payload, decides what to do on Discord.
  */
 
-async function handleGithubEvent(eventName, payload, discordClient) {
+async function handleGithubEvent(eventName, payload, discordClient, setup) {
   try {
-    const channelId = process.env.DISCORD_CHANNEL_ID;
+    const channelId = setup?.discordChannelId || process.env.DISCORD_CHANNEL_ID;
     if (!channelId) {
       console.warn("DISCORD_CHANNEL_ID not set; skipping Discord notifications.");
       return;
