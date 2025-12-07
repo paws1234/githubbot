@@ -41,11 +41,21 @@ async function handleGithubEvent(eventName, payload, discordClient, setup) {
         const ref = payload.ref;
         const commits = payload.commits || [];
         const repoName = payload.repository && payload.repository.full_name;
+        const deleted = payload.deleted === true;
 
         if (!ref || !repoName) {
           throw new Error("Invalid push payload received from GitHub");
         }
 
+        // Handle branch deletion
+        if (deleted) {
+          const branchName = ref.replace('refs/heads/', '');
+          const text = `🗑️ Branch \`${branchName}\` deleted in **${repoName}** by **${payload.pusher?.name || "unknown"}**`;
+          await channel.send(text);
+          return;
+        }
+
+        // Handle regular push
         let text = `🚀 Push to \`${ref}\` in **${repoName}** by **${payload.pusher?.name || "unknown"}**`;
         if (commits.length) {
           const lines = commits.slice(0, 5).map(c => `- ${c.message} (${c.id.substring(0, 7)})`);
