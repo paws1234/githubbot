@@ -788,8 +788,9 @@ client.on("ready", () => {
         const name = interaction.options.getString("name", true);
         const base = interaction.options.getString("base") || "main";
 
+        // Defer IMMEDIATELY before any async operations
+        await interaction.deferReply();
         try {
-          await interaction.deferReply();
           const result = await github.createBranch(githubToken, githubOwner, githubRepo, name, base);
           const branchUrl = `https://github.com/${githubOwner}/${githubRepo}/tree/${name}`;
           await interaction.editReply(`🌿 Branch **${name}** created from **${base}** successfully!\n${branchUrl}`);
@@ -799,11 +800,7 @@ client.on("ready", () => {
           await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           console.error(err);
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: `❌ Failed to create branch: ${err.message}`, ephemeral: true });
-          } else if (interaction.deferred) {
-            await interaction.editReply(`❌ Failed to create branch: ${err.message}`);
-          }
+          await interaction.editReply(`❌ Failed to create branch: ${err.message}`);
         }
       }
 
@@ -828,8 +825,9 @@ client.on("ready", () => {
       }
 
       if (interaction.commandName === "list-branches") {
+        // Defer IMMEDIATELY before any async operations
+        await interaction.deferReply();
         try {
-          await interaction.deferReply();
           const branches = await github.listBranches(githubToken, githubOwner, githubRepo);
           if (branches.length === 0) {
             await interaction.editReply(`🌿 No branches found`);
@@ -838,11 +836,7 @@ client.on("ready", () => {
             await interaction.editReply(`🌿 **Branches** in ${githubOwner}/${githubRepo}:\n\`\`\`\n${branchList}\n\`\`\``);
           }
         } catch (err) {
-          if (!interaction.replied && !interaction.deferred) {
-            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
-          } else {
-            await interaction.editReply(`❌ ${err.message}`);
-          }
+          await interaction.editReply(`❌ ${err.message}`);
         }
       }
 
@@ -2072,14 +2066,40 @@ app.post("/webhook/:webhookId", async (req, res) => {
       }
     }
 
+    // ✅ Verify the webhook event is from the correct repository
+    const repoName = payload.repository?.full_name;
+    const expectedRepo = `${setup.githubOwner}/${setup.githubRepo}`;
+    if (repoName && repoName !== expectedRepo) {
+      console.warn(`⚠️ Webhook from wrong repo: ${repoName} (expected ${expectedRepo})`);
+      return res.status(400).json({ error: "Repository mismatch", received: repoName, expected: expectedRepo });
+    }
+
     console.log(`📨 Webhook (${setup.githubOwner}/${setup.githubRepo}): ${eventName}`);
 
-    // Get or create Discord client for this setup
+    // Get or create Discord client for this setup with timeout and error handling
     let client = activeClients.get(setup.id);
     if (!client || !client.isReady()) {
-      console.log(`🔄 Creating new Discord client for setup ${setup.id}`);
-      client = await createDiscordBot(setup);
-      activeClients.set(setup.id, client);
+      try {
+        console.log(`🔄 Creating new Discord client for setup ${setup.id}`);
+        
+        // Create client with 10 second timeout
+        client = await Promise.race([
+          createDiscordBot(setup),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('Discord client creation timeout (10s)')), 10000)
+          )
+        ]);
+        
+        activeClients.set(setup.id, client);
+        console.log(`✅ Discord client ready for setup ${setup.id}`);
+      } catch (err) {
+        console.error(`❌ Failed to create Discord client for setup ${setup.id}:`, err.message);
+        return res.status(503).json({ 
+          error: 'Discord service unavailable', 
+          message: err.message,
+          retry: true 
+        });
+      }
     }
 
     await workflows.handleGithubEvent(eventName, payload, client, setup);

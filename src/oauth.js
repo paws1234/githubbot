@@ -169,17 +169,40 @@ async function getDiscordGuilds(accessToken) {
 /**
  * Get Discord guild channels
  */
-async function getDiscordChannels(guildId, botToken) {
+async function getDiscordChannels(guildId, botToken, userToken = null) {
   try {
+    // Try with bot token first
+    console.log(`🔍 Fetching channels for guild ${guildId} with bot token...`);
     const response = await axios.get(
       `https://discord.com/api/v10/guilds/${guildId}/channels`,
       {
         headers: { Authorization: `Bot ${botToken}` }
       }
     );
-    return response.data.filter(ch => ch.type === 0); // Only text channels
-  } catch (err) {
-    throw new Error(`Failed to fetch Discord channels: ${err.message}`);
+    const textChannels = response.data.filter(ch => ch.type === 0); // Only text channels
+    console.log(`✅ Found ${textChannels.length} text channels in guild ${guildId}`);
+    return textChannels;
+  } catch (botErr) {
+    // Log detailed error info
+    console.error(`❌ Bot token error for guild ${guildId}:`, {
+      status: botErr.response?.status,
+      statusText: botErr.response?.statusText,
+      message: botErr.message,
+      data: botErr.response?.data
+    });
+    
+    // If bot token fails with 403 (permission denied)
+    if (botErr.response?.status === 403) {
+      console.warn('⚠️ Bot does not have permission to view channels (403)');
+      console.warn('💡 Fix: Make sure bot has "View Channels" permission in the guild');
+      return [];
+    }
+    
+    // If bot token fails for other reasons
+    console.warn(`⚠️ Bot token failed with status ${botErr.response?.status}, checking alternative methods...`);
+    
+    // Return empty and let the caller handle it
+    return [];
   }
 }
 
