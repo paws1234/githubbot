@@ -501,8 +501,14 @@
         const channels = data.channels || [];
         
         if (!channels || channels.length === 0) {
-          channelSelect.innerHTML = '<option value="">No text channels found - Using General by default</option>';
-          console.warn('⚠️ No channels returned from API');
+          // No channels found - use General as default with guild ID as channel ID
+          console.warn('⚠️ No channels returned from API, using General fallback');
+          channelSelect.innerHTML = '';
+          const option = document.createElement('option');
+          option.value = guildId; // Use guild ID as fallback
+          option.textContent = '# general (default)';
+          option.selected = true;
+          channelSelect.appendChild(option);
           return;
         }
         
@@ -515,8 +521,13 @@
         });
       } catch (err) {
         console.error('Error fetching channels:', err);
-        channelSelect.innerHTML = '<option value="">⚠️ Error loading channels - Select manually</option>';
-        // Allow user to proceed anyway
+        // Fallback to using guild ID as channel ID
+        channelSelect.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = guildId;
+        option.textContent = '# general (fallback)';
+        option.selected = true;
+        channelSelect.appendChild(option);
       }
     }
 
