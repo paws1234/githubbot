@@ -1763,29 +1763,23 @@ Use: \`/merge-pr number:# method:squash\`
       }
 
       if (interaction.commandName === "change-repo") {
-        try {
-          const owner = interaction.options.getString("owner");
-          const repo = interaction.options.getString("repository");
+        const owner = interaction.options.getString("owner");
+        const repo = interaction.options.getString("repository");
 
+        try {
           // Check at least one field is provided
           if (!owner && !repo) {
             return await interaction.reply({
               content: '❌ Please provide at least **owner** or **repository** to update.',
-              flags: 64 // Ephemeral flag
-            });
-          }
-
-          // Get the current setup for this channel
-          const setup = client.setupConfig;
-          if (!setup) {
-            return await interaction.reply({
-              content: '❌ Bot not configured for this channel. Run `/git-setup` first.',
               flags: 64
             });
           }
 
-          // Defer before making async calls
-          await interaction.deferReply({ flags: 64 });
+          // Reply immediately before async operations
+          await interaction.reply({
+            content: '⏳ Updating repository...',
+            flags: 64
+          });
 
           // Build update object
           const updates = {};
@@ -1793,7 +1787,7 @@ Use: \`/merge-pr number:# method:squash\`
           if (repo) updates.githubRepo = repo;
 
           // Update via API
-          const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/setup/${setup.id}`, {
+          const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/setup/${setupId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updates)
@@ -1826,15 +1820,15 @@ Use: \`/merge-pr number:# method:squash\`
             content: message
           });
 
-          console.log(`🔄 Repository updated: ${owner || setup.githubOwner}/${repo || setup.githubRepo}`);
+          console.log(`🔄 Repository updated: ${owner || githubOwner}/${repo || githubRepo}`);
         } catch (err) {
           console.error("Error in change-repo command:", err);
-          if (!interaction.replied && !interaction.deferred) {
+          if (!interaction.replied) {
             await interaction.reply({
               content: `❌ Error: ${err.message}`,
               flags: 64
             });
-          } else if (interaction.deferred) {
+          } else {
             await interaction.editReply({
               content: `❌ Error: ${err.message}`
             });
