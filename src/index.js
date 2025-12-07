@@ -281,6 +281,7 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // Health check
 app.get("/health", (req, res) => {
@@ -301,7 +302,20 @@ app.post("/webhook/:webhookId", async (req, res) => {
     }
 
     const eventName = req.headers["x-github-event"];
-    const payload = req.body;
+    
+    // Handle both JSON and form-encoded payloads
+    let payload = req.body;
+    if (typeof payload === "string") {
+      try {
+        payload = JSON.parse(payload);
+      } catch (e) {
+        // If it's form-encoded, it might be in a 'payload' field
+        if (payload.includes("payload=")) {
+          const decoded = decodeURIComponent(payload.split("payload=")[1]);
+          payload = JSON.parse(decoded);
+        }
+      }
+    }
 
     console.log(`📨 Webhook (${setup.githubOwner}/${setup.githubRepo}): ${eventName}`);
 
