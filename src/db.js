@@ -100,7 +100,10 @@ async function createSetup(setupData) {
 
     return {
       id: result.rows[0].id,
-      webhookId: result.rows[0].webhookid
+      webhookId: result.rows[0].webhookid,
+      githubOwner: result.rows[0].githubowner,
+      githubRepo: result.rows[0].githubrepo,
+      discordGuildId: result.rows[0].discordguildid
     };
   } catch (err) {
     console.error('❌ Failed to create setup:', err.message);
