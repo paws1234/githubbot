@@ -206,7 +206,8 @@ client.on("ready", () => {
         try {
           await interaction.deferReply();
           const result = await github.createBranch(githubToken, githubOwner, githubRepo, name, base);
-          await interaction.editReply(`🌿 Branch **${name}** created from **${base}** successfully!`);
+          const branchUrl = `https://github.com/${githubOwner}/${githubRepo}/tree/${name}`;
+          await interaction.editReply(`🌿 Branch **${name}** created from **${base}** successfully!\n${branchUrl}`);
         } catch (err) {
           console.error(err);
           if (!interaction.replied && !interaction.deferred) {
