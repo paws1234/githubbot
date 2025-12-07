@@ -1793,7 +1793,7 @@ Use: \`/merge-pr number:# method:squash\`
           if (repo) updates.githubRepo = repo;
 
           // Update via API
-          const response = await fetch(`http://localhost:${PORT || 3000}/api/setup/${setup.id}`, {
+          const response = await fetch(`http://localhost:${process.env.PORT || 3000}/api/setup/${setup.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updates)
