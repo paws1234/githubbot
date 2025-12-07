@@ -1,31 +1,29 @@
 const { Octokit } = require("@octokit/rest");
 
-function getOctokit() {
-  if (!process.env.GITHUB_TOKEN) {
-    throw new Error("GITHUB_TOKEN is not set");
+function getOctokit(token) {
+  if (!token) {
+    throw new Error("GitHub token is not provided");
   }
   return new Octokit({
-    auth: process.env.GITHUB_TOKEN,
+    auth: token,
     userAgent: "github-discord-automation"
   });
 }
 
-function getRepoConfig() {
-  const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
+function getRepoConfig(owner, repo) {
   if (!owner || !repo) {
-    throw new Error("GITHUB_OWNER and GITHUB_REPO must be set");
+    throw new Error("GITHUB_OWNER and GITHUB_REPO must be provided");
   }
   return { owner, repo };
 }
 
-async function createPR(branch, title, body = "") {
+async function createPR(token, owner, repo, branch, title, body = "") {
   try {
-    const octokit = getOctokit();
-    const repo = getRepoConfig();
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
 
     const res = await octokit.pulls.create({
-      ...repo,
+      ...repoConfig,
       title,
       head: branch,
       base: "main",
@@ -44,13 +42,13 @@ async function createPR(branch, title, body = "") {
   }
 }
 
-async function approvePR(number) {
+async function approvePR(token, owner, repo, number) {
   try {
-    const octokit = getOctokit();
-    const repo = getRepoConfig();
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
 
     const res = await octokit.pulls.createReview({
-      ...repo,
+      ...repoConfig,
       pull_number: number,
       event: "APPROVE"
     });
@@ -65,13 +63,13 @@ async function approvePR(number) {
   }
 }
 
-async function commentPR(number, text) {
+async function commentPR(token, owner, repo, number, text) {
   try {
-    const octokit = getOctokit();
-    const repo = getRepoConfig();
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
 
     const res = await octokit.issues.createComment({
-      ...repo,
+      ...repoConfig,
       issue_number: number,
       body: text
     });
@@ -84,30 +82,31 @@ async function commentPR(number, text) {
   }
 }
 
-async function mergePR(number, method = "merge") {
-  const octokit = getOctokit();
-  const repo = getRepoConfig();
+async function mergePR(token, owner, repo, number, method = "merge") {
+  const octokit = getOctokit(token);
+  const repoConfig = getRepoConfig(owner, repo);
 
   const res = await octokit.pulls.merge({
-    ...repo,
+    ...repoConfig,
     pull_number: number,
     merge_method: method
   });
   return res.data;
 }
-async function createBranch(branchName, baseBranch = "main") {
-  const octokit = getOctokit();
-  const repo = getRepoConfig();
+
+async function createBranch(token, owner, repo, branchName, baseBranch = "main") {
+  const octokit = getOctokit(token);
+  const repoConfig = getRepoConfig(owner, repo);
 
   const baseRef = await octokit.git.getRef({
-    ...repo,
+    ...repoConfig,
     ref: `heads/${baseBranch}`
   });
 
   const sha = baseRef.data.object.sha;
 
   const newRef = await octokit.git.createRef({
-    ...repo,
+    ...repoConfig,
     ref: `refs/heads/${branchName}`,
     sha
   });
