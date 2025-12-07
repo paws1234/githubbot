@@ -29,8 +29,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
       - name: Install dependencies
-        run: npm install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+            npm ci --production
+          fi
 
       - name: Lint JavaScript files
         run: npm run lint --if-present || npx eslint src/ --max-warnings=5 2>/dev/null || echo "ESLint not configured, skipping"
