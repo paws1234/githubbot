@@ -1771,7 +1771,7 @@ Use: \`/merge-pr number:# method:squash\`
           if (!owner && !repo) {
             return await interaction.reply({
               content: '❌ Please provide at least **owner** or **repository** to update.',
-              ephemeral: true
+              flags: 64 // Ephemeral flag
             });
           }
 
@@ -1780,9 +1780,12 @@ Use: \`/merge-pr number:# method:squash\`
           if (!setup) {
             return await interaction.reply({
               content: '❌ Bot not configured for this channel. Run `/git-setup` first.',
-              ephemeral: true
+              flags: 64
             });
           }
+
+          // Defer before making async calls
+          await interaction.deferReply({ flags: 64 });
 
           // Build update object
           const updates = {};
@@ -1798,9 +1801,8 @@ Use: \`/merge-pr number:# method:squash\`
 
           if (!response.ok) {
             const error = await response.json();
-            return await interaction.reply({
-              content: `❌ Failed to update: ${error.error}`,
-              ephemeral: true
+            return await interaction.editReply({
+              content: `❌ Failed to update: ${error.error}`
             });
           }
 
@@ -1820,17 +1822,23 @@ Use: \`/merge-pr number:# method:squash\`
           }
           message += `\n\nAll future GitHub events will be tracked in this repository.`;
 
-          await interaction.reply({
-            content: message,
-            ephemeral: true
+          await interaction.editReply({
+            content: message
           });
 
           console.log(`🔄 Repository updated: ${owner || setup.githubOwner}/${repo || setup.githubRepo}`);
         } catch (err) {
-          await interaction.reply({
-            content: `❌ Error: ${err.message}`,
-            ephemeral: true
-          });
+          console.error("Error in change-repo command:", err);
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({
+              content: `❌ Error: ${err.message}`,
+              flags: 64
+            });
+          } else if (interaction.deferred) {
+            await interaction.editReply({
+              content: `❌ Error: ${err.message}`
+            });
+          }
         }
       }
 
