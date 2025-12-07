@@ -194,6 +194,181 @@ async function getRepoInfo(token, owner, repo) {
   }
 }
 
+async function closeIssue(token, owner, repo, number) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.issues.update({
+      ...repoConfig,
+      issue_number: number,
+      state: "closed"
+    });
+    return res.data;
+  } catch (err) {
+    if (err.status === 404) {
+      throw new Error(`Issue #${number} not found`);
+    }
+    throw new Error(`Failed to close issue: ${err.message}`);
+  }
+}
+
+async function reopenIssue(token, owner, repo, number) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.issues.update({
+      ...repoConfig,
+      issue_number: number,
+      state: "open"
+    });
+    return res.data;
+  } catch (err) {
+    if (err.status === 404) {
+      throw new Error(`Issue #${number} not found`);
+    }
+    throw new Error(`Failed to reopen issue: ${err.message}`);
+  }
+}
+
+async function closePR(token, owner, repo, number) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.pulls.update({
+      ...repoConfig,
+      pull_number: number,
+      state: "closed"
+    });
+    return res.data;
+  } catch (err) {
+    if (err.status === 404) {
+      throw new Error(`PR #${number} not found`);
+    }
+    throw new Error(`Failed to close PR: ${err.message}`);
+  }
+}
+
+async function assignPR(token, owner, repo, number, reviewers = []) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.pulls.requestReviewers({
+      ...repoConfig,
+      pull_number: number,
+      reviewers
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to assign reviewers: ${err.message}`);
+  }
+}
+
+async function listIssues(token, owner, repo, state = "open") {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.issues.list({
+      ...repoConfig,
+      state,
+      per_page: 10,
+      sort: "updated",
+      direction: "desc"
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to list issues: ${err.message}`);
+  }
+}
+
+async function addLabel(token, owner, repo, number, labels = []) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.issues.addLabels({
+      ...repoConfig,
+      issue_number: number,
+      labels
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to add labels: ${err.message}`);
+  }
+}
+
+async function getCommits(token, owner, repo, limit = 10) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.repos.listCommits({
+      ...repoConfig,
+      per_page: limit
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to get commits: ${err.message}`);
+  }
+}
+
+async function createRelease(token, owner, repo, tagName, body = "", isDraft = false) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.repos.createRelease({
+      ...repoConfig,
+      tag_name: tagName,
+      body,
+      draft: isDraft
+    });
+    return res.data;
+  } catch (err) {
+    throw new Error(`Failed to create release: ${err.message}`);
+  }
+}
+
+async function getIssueInfo(token, owner, repo, number) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.issues.get({
+      ...repoConfig,
+      issue_number: number
+    });
+    return res.data;
+  } catch (err) {
+    if (err.status === 404) {
+      throw new Error(`Issue #${number} not found`);
+    }
+    throw new Error(`Failed to get issue info: ${err.message}`);
+  }
+}
+
+async function deleteBranch(token, owner, repo, branchName) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const res = await octokit.git.deleteRef({
+      ...repoConfig,
+      ref: `heads/${branchName}`
+    });
+    return res.data;
+  } catch (err) {
+    if (err.status === 404) {
+      throw new Error(`Branch "${branchName}" not found`);
+    }
+    throw new Error(`Failed to delete branch: ${err.message}`);
+  }
+}
+
 
 module.exports = {
   createPR,
@@ -205,5 +380,15 @@ module.exports = {
   listBranches,
   createIssue,
   getPRInfo,
-  getRepoInfo
+  getRepoInfo,
+  closeIssue,
+  reopenIssue,
+  closePR,
+  assignPR,
+  listIssues,
+  addLabel,
+  getCommits,
+  createRelease,
+  getIssueInfo,
+  deleteBranch
 };
