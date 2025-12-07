@@ -369,6 +369,27 @@ async function deleteBranch(token, owner, repo, branchName) {
   }
 }
 
+// Helper: Generate git commands for developers
+function getCloneCommand(owner, repo) {
+  return `git clone https://github.com/${owner}/${repo}.git`;
+}
+
+function getCheckoutCommand(branchName) {
+  return `git checkout ${branchName}`;
+}
+
+function getPullCommand() {
+  return `git pull origin main`;
+}
+
+function getCommitCommand(message) {
+  return `git commit -m "${message}"`;
+}
+
+function getPushCommand(branchName) {
+  return `git push origin ${branchName}`;
+}
+
 
 module.exports = {
   createPR,
@@ -390,5 +411,10 @@ module.exports = {
   getCommits,
   createRelease,
   getIssueInfo,
-  deleteBranch
+  deleteBranch,
+  getCloneCommand,
+  getCheckoutCommand,
+  getPullCommand,
+  getCommitCommand,
+  getPushCommand
 };

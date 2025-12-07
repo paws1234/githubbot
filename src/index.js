@@ -15,6 +15,7 @@ const workflows = require("./workflows");
 const setupRouter = require("./setupRouter");
 const oauthRouter = require("./oauthRouter");
 const db = require("./db");
+const notifications = require("./notifications");
 
 // Map to store active Discord clients
 const activeClients = new Map();
@@ -255,7 +256,33 @@ async function createDiscordBot(setupConfig) {
       o.setName("name")
         .setDescription("Branch name")
         .setRequired(true)
-    )
+    ),
+
+  new SlashCommandBuilder()
+    .setName("git-setup")
+    .setDescription("Get git commands to clone and set up repo"),
+
+  new SlashCommandBuilder()
+    .setName("git-branch-checkout")
+    .setDescription("Get git checkout command for a branch")
+    .addStringOption(o =>
+      o.setName("branch")
+        .setDescription("Branch name")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("git-push-command")
+    .setDescription("Get git push command for a branch")
+    .addStringOption(o =>
+      o.setName("branch")
+        .setDescription("Branch name")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("workflow-help")
+    .setDescription("Show complete git workflow for branch work")
 
 ].map(c => c.toJSON());
 
@@ -301,6 +328,10 @@ client.on("ready", () => {
         try {
           const pr = await github.createPR(githubToken, githubOwner, githubRepo, branch, title, body);
           await interaction.editReply(`✅ PR created: #${pr.number} - ${pr.html_url}`);
+          
+          // Send notification to channel
+          const embed = notifications.createPRNotification(pr.number, title, branch, interaction.user.username, pr.html_url);
+          await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           await interaction.editReply(`❌ Failed to create PR: ${err.message}`);
         }
@@ -310,8 +341,13 @@ client.on("ready", () => {
         const number = interaction.options.getInteger("number", true);
         await interaction.deferReply({ ephemeral: false });
         try {
+          const pr = await github.getPRInfo(githubToken, githubOwner, githubRepo, number);
           await github.approvePR(githubToken, githubOwner, githubRepo, number);
           await interaction.editReply(`👍 Approved PR #${number}`);
+          
+          // Send notification to channel
+          const embed = notifications.approvePRNotification(number, pr.title, interaction.user.username, pr.html_url);
+          await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           await interaction.editReply(`❌ Failed to approve PR: ${err.message}`);
         }
@@ -334,9 +370,14 @@ client.on("ready", () => {
         const method = interaction.options.getString("method") || "merge";
         await interaction.deferReply({ ephemeral: false });
         try {
+          const pr = await github.getPRInfo(githubToken, githubOwner, githubRepo, number);
           const res = await github.mergePR(githubToken, githubOwner, githubRepo, number, method);
           if (res.merged) {
             await interaction.editReply(`✅ PR #${number} merged via \`${method}\``);
+            
+            // Send notification to channel
+            const embed = notifications.mergePRNotification(number, pr.title, method, interaction.user.username, pr.html_url);
+            await notifications.sendNotification(client, discordChannelId, embed);
           } else {
             await interaction.editReply(`⚠️ Failed to merge PR #${number}: ${res.message || "unknown error"}`);
           }
@@ -354,6 +395,10 @@ client.on("ready", () => {
           const result = await github.createBranch(githubToken, githubOwner, githubRepo, name, base);
           const branchUrl = `https://github.com/${githubOwner}/${githubRepo}/tree/${name}`;
           await interaction.editReply(`🌿 Branch **${name}** created from **${base}** successfully!\n${branchUrl}`);
+          
+          // Send notification to channel
+          const embed = notifications.createBranchNotification(name, base, interaction.user.username, branchUrl);
+          await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           console.error(err);
           if (!interaction.replied && !interaction.deferred) {
@@ -411,6 +456,10 @@ client.on("ready", () => {
           const issue = await github.createIssue(githubToken, githubOwner, githubRepo, title, body);
           const issueUrl = `https://github.com/${githubOwner}/${githubRepo}/issues/${issue.number}`;
           await interaction.editReply(`🐛 Issue #${issue.number} created: ${title}\n${issueUrl}`);
+          
+          // Send notification to channel
+          const embed = notifications.createIssueNotification(issue.number, title, interaction.user.username, issueUrl);
+          await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
@@ -455,8 +504,13 @@ client.on("ready", () => {
         const number = interaction.options.getInteger("number", true);
         try {
           await interaction.deferReply();
+          const issue = await github.getIssueInfo(githubToken, githubOwner, githubRepo, number);
           await github.closeIssue(githubToken, githubOwner, githubRepo, number);
           await interaction.editReply(`✅ Issue #${number} closed`);
+          
+          // Send notification to channel
+          const embed = notifications.closeIssueNotification(number, issue.title, interaction.user.username, issue.html_url);
+          await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
@@ -593,6 +647,10 @@ client.on("ready", () => {
           await interaction.deferReply();
           const release = await github.createRelease(githubToken, githubOwner, githubRepo, tag, body);
           await interaction.editReply(`🎉 Release **${tag}** created!\n${release.html_url}`);
+          
+          // Send notification to channel
+          const embed = notifications.createReleaseNotification(tag, release.name, interaction.user.username, release.html_url);
+          await notifications.sendNotification(client, discordChannelId, embed);
         } catch (err) {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
@@ -614,6 +672,87 @@ client.on("ready", () => {
           } else {
             await interaction.editReply(`❌ ${err.message}`);
           }
+        }
+      }
+
+      if (interaction.commandName === "git-setup") {
+        try {
+          const cloneCmd = github.getCloneCommand(githubOwner, githubRepo);
+          const pullCmd = github.getPullCommand();
+          const setup = `\`\`\`bash\n# Clone the repository\n${cloneCmd}\n\n# Navigate to the repo\ncd ${githubRepo}\n\n# Ensure you're on main branch and up to date\ngit checkout main\n${pullCmd}\n\`\`\``;
+          await interaction.reply(setup);
+        } catch (err) {
+          await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+        }
+      }
+
+      if (interaction.commandName === "git-branch-checkout") {
+        const branch = interaction.options.getString("branch", true);
+        try {
+          const checkoutCmd = github.getCheckoutCommand(branch);
+          const command = `\`\`\`bash\n${checkoutCmd}\n\`\`\``;
+          await interaction.reply(`📌 **Checkout command for branch \`${branch}\`**:\n${command}`);
+        } catch (err) {
+          await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+        }
+      }
+
+      if (interaction.commandName === "git-push-command") {
+        const branch = interaction.options.getString("branch", true);
+        try {
+          const pushCmd = github.getPushCommand(branch);
+          const command = `\`\`\`bash\n${pushCmd}\n\`\`\``;
+          await interaction.reply(`📤 **Push command for branch \`${branch}\`**:\n${command}\n\nThen create a PR on GitHub!`);
+        } catch (err) {
+          await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+        }
+      }
+
+      if (interaction.commandName === "workflow-help") {
+        try {
+          const workflow = `
+📚 **COMPLETE GIT WORKFLOW:**
+
+1️⃣ **Clone & Setup:**
+\`\`\`bash
+${github.getCloneCommand(githubOwner, githubRepo)}
+cd ${githubRepo}
+${github.getPullCommand()}
+\`\`\`
+
+2️⃣ **Create a new branch:**
+Use: \`/create-branch name:feature-name base:main\`
+
+3️⃣ **Checkout the branch locally:**
+\`\`\`bash
+${github.getCheckoutCommand("your-branch-name")}
+\`\`\`
+
+4️⃣ **Make your changes and commit:**
+\`\`\`bash
+git add .
+git commit -m "description of your changes"
+\`\`\`
+
+5️⃣ **Push to GitHub:**
+\`\`\`bash
+${github.getPushCommand("your-branch-name")}
+\`\`\`
+
+6️⃣ **Create a PR:**
+Use: \`/create-pr branch:your-branch-name title:"PR title"\`
+
+7️⃣ **Request review:**
+Use: \`/assign-pr number:# reviewers:username1,username2\`
+
+8️⃣ **Merge when approved:**
+Use: \`/merge-pr number:# method:squash\`
+
+✅ Done!
+`;
+          await interaction.reply(workflow);
+        } catch (err) {
+          await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
         }
       }
 
