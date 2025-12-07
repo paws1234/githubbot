@@ -300,7 +300,7 @@ app.get("/health", (req, res) => {
 
 // Setup page
 app.get("/setup", (req, res) => {
-  res.sendFile(__dirname + "/../public/setup.html");
+  res.sendFile("/app/public/setup.html");
 });
 
 // OAuth routes
