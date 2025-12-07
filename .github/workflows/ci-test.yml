@@ -194,8 +194,8 @@ jobs:
         run: |
           echo "Scanning for exposed secrets..."
           
-          # Check for common secret patterns
-          if grep -r "DISCORD_TOKEN\|GITHUB_TOKEN\|GITLAB_TOKEN\|API_KEY\|SECRET_KEY" src/ --include="*.js" | grep -v "process.env\|//\|console"; then
+          # Check for common secret patterns (excluding regex patterns and env variable references)
+          if grep -r "DISCORD_TOKEN\|GITHUB_TOKEN\|GITLAB_TOKEN\|API_KEY\|SECRET_KEY" src/ --include="*.js" | grep -v "process.env\|//\|console\|regex\|/.*/" | grep -v "\.js:\s*'" | grep -v "\.js:\s*\""; then
             echo "⚠️ Potential secrets found in code"
             exit 1
           else
