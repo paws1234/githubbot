@@ -625,11 +625,13 @@ client.on("ready", () => {
 
     try {
       // Get setup config from client
-      const { discordToken, githubToken, githubOwner, githubRepo } = client.setupConfig || {};
+      const { id, discordToken, githubToken, githubOwner, githubRepo } = client.setupConfig || {};
       
-      if (!discordToken || !githubToken || !githubOwner || !githubRepo) {
+      if (!id || !discordToken || !githubToken || !githubOwner || !githubRepo) {
         return interaction.reply({ content: "❌ Setup not configured properly", ephemeral: true });
       }
+
+      const setupId = id;
 
       if (interaction.commandName === "create-pr") {
         const branch = interaction.options.getString("branch", true);
