@@ -781,6 +781,205 @@ async function unprotectBranch(token, owner, repo, branchName) {
   }
 }
 
+async function scanPRForSecrets(token, owner, repo, prNumber) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get PR files
+    const files = await octokit.pulls.listFiles({
+      ...repoConfig,
+      pull_number: prNumber,
+      per_page: 100
+    });
+
+    // Secret patterns to detect
+    const secretPatterns = {
+      'AWS_KEY': /AKIA[0-9A-Z]{16}/g,
+      'PRIVATE_KEY': /-----BEGIN (RSA|DSA|EC|PGP|OPENSSH) PRIVATE KEY/g,
+      'API_KEY': /(api[_-]?key|apikey)["\s:=]+([a-zA-Z0-9\-_]{20,})/gi,
+      'TOKEN': /(token|auth)["\s:=]+([a-zA-Z0-9\-_.]{20,})/gi,
+      'PASSWORD': /(password|passwd|pwd)["\s:=]+([^\s"]{8,})/gi,
+      'DATABASE_URL': /(database_url|db_url)["\s:=]+([^\s"]+)/gi,
+      'GITHUB_TOKEN': /gh[pourt]_[a-zA-Z0-9]{36,255}/g,
+      'SLACK_TOKEN': /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/g,
+      'ENV_FILE': /\.env(\.(local|development|production|staging))?$/
+    };
+
+    const secrets = [];
+    const envFiles = [];
+
+    for (const file of files) {
+      // Check for .env files
+      if (secretPatterns.ENV_FILE.test(file.filename)) {
+        envFiles.push(file.filename);
+      }
+
+      // Get file content
+      if (file.patch) {
+        for (const [secretType, pattern] of Object.entries(secretPatterns)) {
+          if (secretType === 'ENV_FILE') continue;
+          
+          const matches = file.patch.match(pattern);
+          if (matches) {
+            secrets.push({
+              type: secretType,
+              file: file.filename,
+              count: matches.length
+            });
+          }
+        }
+      }
+    }
+
+    return {
+      prNumber,
+      secretsFound: secrets.length > 0,
+      secrets: secrets,
+      envFiles: envFiles,
+      totalFiles: files.length,
+      status: secrets.length === 0 && envFiles.length === 0 ? '✅ SAFE' : '⚠️ POTENTIAL SECRETS FOUND'
+    };
+  } catch (err) {
+    throw new Error(`Failed to scan PR for secrets: ${err.message}`);
+  }
+}
+
+async function checkDependencyVulnerabilities(token, owner, repo) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    // Get repository content to check for lock files and manifests
+    const files = await octokit.repos.getContent({
+      ...repoConfig,
+      path: '/'
+    }).catch(() => ({ data: [] }));
+
+    const vulnerabilityInfo = {
+      npm: { hasLockFile: false, status: 'Not configured' },
+      python: { hasLockFile: false, status: 'Not configured' },
+      composer: { hasLockFile: false, status: 'Not configured' },
+      ruby: { hasLockFile: false, status: 'Not configured' }
+    };
+
+    // Check for various package files
+    const fileNames = Array.isArray(files.data) ? files.data.map(f => f.name) : [];
+
+    if (fileNames.includes('package.json') || fileNames.includes('package-lock.json') || fileNames.includes('yarn.lock')) {
+      vulnerabilityInfo.npm = { hasLockFile: true, status: 'npm audit recommended' };
+    }
+
+    if (fileNames.includes('requirements.txt') || fileNames.includes('Pipfile') || fileNames.includes('poetry.lock')) {
+      vulnerabilityInfo.python = { hasLockFile: true, status: 'pip audit recommended' };
+    }
+
+    if (fileNames.includes('composer.json') || fileNames.includes('composer.lock')) {
+      vulnerabilityInfo.composer = { hasLockFile: true, status: 'composer audit recommended' };
+    }
+
+    if (fileNames.includes('Gemfile') || fileNames.includes('Gemfile.lock')) {
+      vulnerabilityInfo.ruby = { hasLockFile: true, status: 'bundle audit recommended' };
+    }
+
+    return {
+      repo: `${owner}/${repo}`,
+      timestamp: new Date().toISOString(),
+      dependencies: vulnerabilityInfo,
+      recommendation: 'Run vulnerability audits on your CI/CD pipeline to detect vulnerable packages automatically.'
+    };
+  } catch (err) {
+    throw new Error(`Failed to check dependencies: ${err.message}`);
+  }
+}
+
+async function getAuditLogs(token, owner, repo, userId = null, daysBack = 7) {
+  try {
+    const octokit = getOctokit(token);
+    const repoConfig = getRepoConfig(owner, repo);
+
+    const since = new Date();
+    since.setDate(since.getDate() - Math.min(daysBack, 365)); // Max 365 days
+
+    // Get commits
+    const commits = await octokit.repos.listCommits({
+      ...repoConfig,
+      since: since.toISOString(),
+      per_page: 100
+    }).catch(() => ({ data: [] }));
+
+    // Get pull requests
+    const prs = await octokit.pulls.list({
+      ...repoConfig,
+      state: 'all',
+      sort: 'updated',
+      direction: 'desc',
+      per_page: 100
+    }).catch(() => ({ data: [] }));
+
+    // Get issues
+    const issues = await octokit.issues.list({
+      ...repoConfig,
+      state: 'all',
+      sort: 'updated',
+      direction: 'desc',
+      per_page: 100
+    }).catch(() => ({ data: [] }));
+
+    // Filter by user if provided
+    let filteredLogs = [];
+
+    const commitLogs = (commits.data || []).map(c => ({
+      type: 'commit',
+      action: 'COMMIT',
+      author: c.commit.author.name,
+      timestamp: c.commit.author.date,
+      details: c.commit.message.substring(0, 100),
+      sha: c.sha.substring(0, 7)
+    }));
+
+    const prLogs = (prs.data || []).map(pr => ({
+      type: 'pull_request',
+      action: pr.state.toUpperCase(),
+      author: pr.user.login,
+      timestamp: pr.updated_at,
+      details: `#${pr.number} - ${pr.title.substring(0, 60)}`,
+      url: pr.html_url
+    }));
+
+    const issueLogs = (issues.data || []).map(issue => ({
+      type: 'issue',
+      action: issue.state.toUpperCase(),
+      author: issue.user.login,
+      timestamp: issue.updated_at,
+      details: `#${issue.number} - ${issue.title.substring(0, 60)}`,
+      url: issue.html_url
+    }));
+
+    filteredLogs = [...commitLogs, ...prLogs, ...issueLogs];
+
+    // Filter by user if provided
+    if (userId) {
+      filteredLogs = filteredLogs.filter(log => 
+        log.author.toLowerCase().includes(userId.toLowerCase())
+      );
+    }
+
+    // Sort by timestamp (newest first)
+    filteredLogs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    return {
+      repo: `${owner}/${repo}`,
+      period: `Last ${daysBack} days`,
+      totalEvents: filteredLogs.length,
+      logs: filteredLogs.slice(0, 50), // Return first 50
+      userFilter: userId || 'All users'
+    };
+  } catch (err) {
+    throw new Error(`Failed to get audit logs: ${err.message}`);
+  }
+}
+
 
 module.exports = {
   createPR,
@@ -822,5 +1021,8 @@ module.exports = {
   getDeploymentStatus,
   createRollback,
   getGitHubStatus,
-  unprotectBranch
+  unprotectBranch,
+  scanPRForSecrets,
+  checkDependencyVulnerabilities,
+  getAuditLogs
 };

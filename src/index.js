@@ -435,7 +435,35 @@ async function createDiscordBot(setupConfig) {
 
   new SlashCommandBuilder()
     .setName("github-status")
-    .setDescription("Check GitHub API status")
+    .setDescription("Check GitHub API status"),
+
+  // SECURITY & AUDIT COMMANDS
+  new SlashCommandBuilder()
+    .setName("scan-secrets")
+    .setDescription("Scan PR for leaked tokens, passwords, env files")
+    .addIntegerOption(o =>
+      o.setName("number")
+        .setDescription("PR number to scan")
+        .setRequired(true)
+    ),
+
+  new SlashCommandBuilder()
+    .setName("dependency-check")
+    .setDescription("Check dependency vulnerabilities (npm, python, composer, ruby)"),
+
+  new SlashCommandBuilder()
+    .setName("audit-log")
+    .setDescription("View audit logs of bot actions")
+    .addStringOption(o =>
+      o.setName("user")
+        .setDescription("Filter by username (optional)")
+        .setRequired(false)
+    )
+    .addIntegerOption(o =>
+      o.setName("days")
+        .setDescription("Date range in days (default: 7, max: 365)")
+        .setRequired(false)
+    )
 
 ].map(c => c.toJSON());
 
@@ -1158,6 +1186,103 @@ Use: \`/merge-pr number:# method:squash\`
             await interaction.editReply(`✅ GitHub is operational!\n\n📊 Status Page: ${status.statusPage}`);
           } else {
             await interaction.editReply(`⚠️ GitHub status unknown\n\n📊 Check: ${status.statusPage}`);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      // SECURITY & AUDIT COMMANDS
+
+      if (interaction.commandName === "scan-secrets") {
+        const number = interaction.options.getInteger("number", true);
+        try {
+          await interaction.deferReply();
+          const scanResult = await github.scanPRForSecrets(githubToken, githubOwner, githubRepo, number);
+          
+          if (scanResult.secretsFound || scanResult.envFiles.length > 0) {
+            let message = `🔴 **${scanResult.status}** for PR #${number}\n\n`;
+            
+            if (scanResult.envFiles.length > 0) {
+              message += `📄 **Env Files Detected:**\n${scanResult.envFiles.map(f => `\`${f}\``).join('\n')}\n\n`;
+            }
+            
+            if (scanResult.secrets.length > 0) {
+              message += `🔑 **Potential Secrets Found:**\n`;
+              scanResult.secrets.forEach(secret => {
+                message += `• \`${secret.type}\` in \`${secret.file}\` (${secret.count} match${secret.count > 1 ? 'es' : ''})\n`;
+              });
+            }
+            
+            message += `\n⚠️ **Action Required:** Review and rotate any exposed credentials immediately!`;
+            await interaction.editReply(message);
+          } else {
+            await interaction.editReply(`✅ **${scanResult.status}** - No secrets detected in PR #${number}`);
+          }
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "dependency-check") {
+        try {
+          await interaction.deferReply();
+          const depCheck = await github.checkDependencyVulnerabilities(githubToken, githubOwner, githubRepo);
+          
+          let message = `📦 **Dependency Vulnerability Check** for ${depCheck.repo}\n\n`;
+          
+          for (const [lang, info] of Object.entries(depCheck.dependencies)) {
+            const icon = info.hasLockFile ? '✅' : '⚪';
+            message += `${icon} **${lang.toUpperCase()}:** ${info.status}\n`;
+          }
+          
+          message += `\n💡 **${depCheck.recommendation}**`;
+          await interaction.editReply(message);
+        } catch (err) {
+          if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ content: `❌ ${err.message}`, ephemeral: true });
+          } else {
+            await interaction.editReply(`❌ ${err.message}`);
+          }
+        }
+      }
+
+      if (interaction.commandName === "audit-log") {
+        const user = interaction.options.getString("user");
+        const days = interaction.options.getInteger("days") || 7;
+        
+        try {
+          await interaction.deferReply();
+          const logs = await github.getAuditLogs(githubToken, githubOwner, githubRepo, user, days);
+          
+          if (logs.logs.length === 0) {
+            await interaction.editReply(`📭 No audit logs found for ${user ? `user \`${user}\`` : 'any user'} in the last ${days} days`);
+          } else {
+            let message = `📋 **Audit Logs** - ${logs.repo}\n`;
+            message += `**Period:** ${logs.period}\n`;
+            message += `**Filter:** ${logs.userFilter}\n`;
+            message += `**Total Events:** ${logs.totalEvents}\n\n`;
+            
+            message += `**Recent Activity:**\n`;
+            logs.logs.slice(0, 15).forEach(log => {
+              const emoji = log.type === 'commit' ? '📝' : log.type === 'pull_request' ? '🔀' : '🐛';
+              const actionColor = log.action === 'OPEN' ? '🟢' : log.action === 'CLOSED' ? '🔴' : '🟡';
+              message += `${emoji} **${log.action}** by \`${log.author}\` - ${log.details}\n`;
+            });
+            
+            if (logs.logs.length > 15) {
+              message += `\n... and ${logs.logs.length - 15} more events`;
+            }
+            
+            await interaction.editReply(message);
           }
         } catch (err) {
           if (!interaction.replied && !interaction.deferred) {
